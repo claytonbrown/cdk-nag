@@ -3,22 +3,22 @@ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
 import {
+  AnyPrincipal,
+  Effect,
   PolicyDocument,
   PolicyStatement,
-  Effect,
-  AnyPrincipal,
   StarPrincipal,
 } from 'aws-cdk-lib/aws-iam';
 import { Key } from 'aws-cdk-lib/aws-kms';
-import { CfnQueuePolicy, Queue } from 'aws-cdk-lib/aws-sqs';
+import { Code, Function, Runtime } from 'aws-cdk-lib/aws-lambda';
+import { CfnQueuePolicy, Queue, QueueEncryption } from 'aws-cdk-lib/aws-sqs';
 import { Aspects, Stack } from 'aws-cdk-lib/core';
-import { NagSuppressions } from '../../src';
+import { TestPack, TestType, validateStack } from './utils';
 import {
   SQSQueueDLQ,
   SQSQueueSSE,
   SQSQueueSSLRequestsOnly,
 } from '../../src/rules/sqs';
-import { validateStack, TestType, TestPack } from './utils';
 
 const testPack = new TestPack([
   SQSQueueDLQ,
@@ -28,29 +28,100 @@ const testPack = new TestPack([
 let stack: Stack;
 
 beforeEach(() => {
-  stack = new Stack();
+  stack = new Stack(undefined, undefined, {
+    env: { account: '111222333444', region: 'us-west-2' },
+  });
   Aspects.of(stack).add(testPack);
 });
 
 describe('Amazon Simple Queue Service (SQS)', () => {
-  describe('SQSQueueDLQ: SQS queues have a dead-letter queue enabled or have a cdk-nag rule suppression indicating they are a dead-letter queue', () => {
+  describe('SQSQueueDLQ: SQS queues have a dead-letter queue enabled if they are not used as a dead-letter queue', () => {
     const ruleId = 'SQSQueueDLQ';
     test('Noncompliance 1', () => {
-      new Queue(stack, 'rQueue');
+      new Queue(stack, 'Queue');
+      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+    });
+
+    test('Noncompliance 2', () => {
+      new Queue(stack, 'Dlq', { queueName: 'foo' });
+      new Queue(stack, 'Queue2', {
+        deadLetterQueue: {
+          queue: Queue.fromQueueArn(
+            stack,
+            'Dlq2',
+            `arn:aws:sqs:${stack.region}:${stack.account}:foo2`
+          ),
+          maxReceiveCount: 42,
+        },
+      });
+      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+    });
+
+    test('Noncompliance 3', () => {
+      new Queue(stack, 'Queue');
+      new Function(stack, 'Function', {
+        runtime: Runtime.NODEJS_18_X,
+        code: Code.fromInline('hi'),
+        handler: 'index.handler',
+      });
+      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+    });
+
+    test('Noncompliance 4', () => {
+      new Queue(stack, 'Dlq', { queueName: 'foo' });
+      new Function(stack, 'Function', {
+        runtime: Runtime.NODEJS_18_X,
+        code: Code.fromInline('hi'),
+        handler: 'index.handler',
+        deadLetterQueue: Queue.fromQueueArn(
+          stack,
+          'Dlq2FromArn',
+          `arn:aws:sqs:${stack.region}:${stack.account}:foo2`
+        ),
+      });
       validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
     });
 
     test('Compliance', () => {
-      const dlq = new Queue(stack, 'rDlq');
-      new Queue(stack, 'rQueue', {
-        deadLetterQueue: { queue: dlq, maxReceiveCount: 42 },
-      });
-      NagSuppressions.addResourceSuppressions(dlq, [
-        {
-          id: `${testPack.readPackName}-SQSQueueDLQ`,
-          reason: 'This queue is a dead-letter queue.',
+      const dlq = new Queue(stack, 'Dlq');
+      new Queue(stack, 'Queue', {
+        deadLetterQueue: {
+          queue: dlq,
+          maxReceiveCount: 42,
         },
-      ]);
+      });
+      new Queue(stack, 'Dlq2', { queueName: 'foo' });
+      new Queue(stack, 'Queue2', {
+        deadLetterQueue: {
+          queue: Queue.fromQueueArn(
+            stack,
+            'Dlq2FromArn',
+            `arn:aws:sqs:${stack.region}:${stack.account}:foo`
+          ),
+          maxReceiveCount: 42,
+        },
+      });
+      validateStack(stack, ruleId, TestType.COMPLIANCE);
+    });
+    test('Compliance2', () => {
+      const dlq = new Queue(stack, 'Dlq');
+      new Function(stack, 'Function', {
+        runtime: Runtime.NODEJS_18_X,
+        code: Code.fromInline('hi'),
+        handler: 'index.handler',
+        deadLetterQueue: dlq,
+      });
+      new Queue(stack, 'Dlq2', { queueName: 'foo' });
+      new Function(stack, 'Function2', {
+        runtime: Runtime.NODEJS_18_X,
+        code: Code.fromInline('hi'),
+        handler: 'index.handler',
+        deadLetterQueue: Queue.fromQueueArn(
+          stack,
+          'Dlq2FromArn',
+          `arn:aws:sqs:${stack.region}:${stack.account}:foo`
+        ),
+      });
       validateStack(stack, ruleId, TestType.COMPLIANCE);
     });
   });
@@ -58,13 +129,25 @@ describe('Amazon Simple Queue Service (SQS)', () => {
   describe('SQSQueueSSE: SQS queues have server-side encryption enabled', () => {
     const ruleId = 'SQSQueueSSE';
     test('Noncompliance 1', () => {
-      new Queue(stack, 'rQueue');
+      new Queue(stack, 'rQueue', {
+        encryption: QueueEncryption.UNENCRYPTED,
+      });
       validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
     });
-    test('Compliance', () => {
+    test('Compliance 1', () => {
       new Queue(stack, 'rQueue', {
         encryptionMasterKey: new Key(stack, 'rQueueKey'),
       });
+      validateStack(stack, ruleId, TestType.COMPLIANCE);
+    });
+    test('Compliance 2', () => {
+      new Queue(stack, 'rQueue', {
+        encryption: QueueEncryption.SQS_MANAGED,
+      });
+      validateStack(stack, ruleId, TestType.COMPLIANCE);
+    });
+    test('Compliance 3', () => {
+      new Queue(stack, 'rQueue');
       validateStack(stack, ruleId, TestType.COMPLIANCE);
     });
   });

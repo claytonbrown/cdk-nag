@@ -5,8 +5,8 @@ SPDX-License-Identifier: Apache-2.0
 import { CfnEnvironmentEC2 } from 'aws-cdk-lib/aws-cloud9';
 import { InstanceType, InstanceClass, InstanceSize } from 'aws-cdk-lib/aws-ec2';
 import { Aspects, Stack } from 'aws-cdk-lib/core';
-import { Cloud9InstanceNoIngressSystemsManager } from '../../src/rules/cloud9';
 import { TestPack, validateStack, TestType } from './utils';
+import { Cloud9InstanceNoIngressSystemsManager } from '../../src/rules/cloud9';
 
 const testPack = new TestPack([Cloud9InstanceNoIngressSystemsManager]);
 let stack: Stack;
@@ -21,6 +21,7 @@ describe('AWS Cloud9', () => {
     const ruleId = 'Cloud9InstanceNoIngressSystemsManager';
     test('Noncompliance ', () => {
       new CfnEnvironmentEC2(stack, 'rC9Env', {
+        imageId: 'ami-123456',
         instanceType: InstanceType.of(
           InstanceClass.T2,
           InstanceSize.MICRO
@@ -31,6 +32,7 @@ describe('AWS Cloud9', () => {
 
     test('Compliance', () => {
       new CfnEnvironmentEC2(stack, 'rC9Env', {
+        imageId: 'ami-123456',
         instanceType: InstanceType.of(
           InstanceClass.T2,
           InstanceSize.MICRO

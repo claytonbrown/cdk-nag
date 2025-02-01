@@ -2,7 +2,7 @@
 Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
-import { SynthUtils, stringLike } from '@aws-cdk/assert';
+import { stringLike, SynthUtils } from '@aws-cdk/assert';
 import '@aws-cdk/assert/jest';
 import {
   Aspects,
@@ -10,9 +10,6 @@ import {
   CfnResource,
   NestedStack,
   Stack,
-  App,
-  Names,
-  Token,
 } from 'aws-cdk-lib';
 import {
   CfnRoute,
@@ -23,18 +20,19 @@ import {
   Vpc,
 } from 'aws-cdk-lib/aws-ec2';
 import { PolicyStatement, User } from 'aws-cdk-lib/aws-iam';
-import { CfnBucket, Bucket } from 'aws-cdk-lib/aws-s3';
+import { CfnBucket } from 'aws-cdk-lib/aws-s3';
 import { IConstruct } from 'constructs';
 import {
-  NagSuppressions,
   AwsSolutionsChecks,
   NagMessageLevel,
   NagPack,
   NagPackProps,
   NagRuleCompliance,
-  IApplyRule,
   NagRules,
+  NagSuppressions,
+  SuppressionIgnoreAlways,
 } from '../src';
+import { expectMessages } from './test-utils';
 
 describe('Rule suppression system', () => {
   test('Test single rule suppression', () => {
@@ -49,13 +47,7 @@ describe('Rule suppression system', () => {
       rules_to_suppress: [{ id: 'AwsSolutions-EC23', reason: 'lorem ipsum' }],
     });
     const messages = SynthUtils.synthesize(stack).messages;
-    expect(messages).not.toContainEqual(
-      expect.objectContaining({
-        entry: expect.objectContaining({
-          data: expect.stringContaining('AwsSolutions-EC23:'),
-        }),
-      })
-    );
+    expectMessages(messages, { notContaining: ['AwsSolutions-EC23:'] });
   });
   test('Fine grained permission cannot be added via rule id [resource]', () => {
     const stack = new Stack();
@@ -112,20 +104,12 @@ describe('Rule suppression system', () => {
       true
     );
     const { messages } = SynthUtils.synthesize(stack);
-    expect(messages).not.toContainEqual(
-      expect.objectContaining({
-        entry: expect.objectContaining({
-          data: expect.stringContaining('AwsSolutions-IAM5[Action::s3:*]:'),
-        }),
-      })
-    );
-    expect(messages).not.toContainEqual(
-      expect.objectContaining({
-        entry: expect.objectContaining({
-          data: expect.stringContaining('AwsSolutions-IAM5[Resource::*]:'),
-        }),
-      })
-    );
+    expectMessages(messages, {
+      notContaining: [
+        'AwsSolutions-IAM5[Action::s3:*]:',
+        'AwsSolutions-IAM5[Resource::*]:',
+      ],
+    });
   });
   test('Test granular suppression when suppressed finely', () => {
     const stack = new Stack();
@@ -149,20 +133,11 @@ describe('Rule suppression system', () => {
       true
     );
     const { messages } = SynthUtils.synthesize(stack);
-    expect(messages).not.toContainEqual(
-      expect.objectContaining({
-        entry: expect.objectContaining({
-          data: expect.stringContaining('AwsSolutions-IAM5[Action::s3:*]:'),
-        }),
-      })
-    );
-    expect(messages).toContainEqual(
-      expect.objectContaining({
-        entry: expect.objectContaining({
-          data: expect.stringContaining('AwsSolutions-IAM5[Resource::*]:'),
-        }),
-      })
-    );
+
+    expectMessages(messages, {
+      notContaining: ['AwsSolutions-IAM5[Action::s3:*]:'],
+      containing: ['AwsSolutions-IAM5[Resource::*]:'],
+    });
   });
   test('Test granular suppression when suppressed finely with a RegExp', () => {
     const stack = new Stack();
@@ -186,22 +161,10 @@ describe('Rule suppression system', () => {
       true
     );
     const { messages } = SynthUtils.synthesize(stack);
-    expect(messages).toContainEqual(
-      expect.objectContaining({
-        entry: expect.objectContaining({
-          data: expect.stringContaining('AwsSolutions-IAM5[Action::s3:*]:'),
-        }),
-      })
-    );
-    expect(messages).not.toContainEqual(
-      expect.objectContaining({
-        entry: expect.objectContaining({
-          data: expect.stringContaining(
-            'AwsSolutions-IAM5[Resource::some-arn:mybucket/*]:'
-          ),
-        }),
-      })
-    );
+    expectMessages(messages, {
+      containing: ['AwsSolutions-IAM5[Action::s3:*]:'],
+      notContaining: ['AwsSolutions-IAM5[Resource::some-arn:mybucket/*]:'],
+    });
   });
   test('Test rule suppression does not overrite aws:cdk:path', () => {
     const stack = new Stack();
@@ -289,22 +252,95 @@ describe('Rule suppression system', () => {
     });
 
     const messages = SynthUtils.synthesize(stack).messages;
-    expect(messages).not.toContainEqual(
-      expect.objectContaining({
-        entry: expect.objectContaining({
-          data: expect.stringContaining('AwsSolutions-EC23:'),
-        }),
-      })
+    expectMessages(messages, {
+      notContaining: [
+        'AwsSolutions-EC23:',
+        'AwsSolutions-EC2SecurityGroupDescription:',
+      ],
+    });
+  });
+  test('Test multi resource suppression', () => {
+    const stack = new Stack();
+    const vpc = new Vpc(stack, 'rVpc');
+    Aspects.of(stack).add(new AwsSolutionsChecks());
+    const test1 = new SecurityGroup(stack, 'rSg1', { vpc });
+    test1.addIngressRule(Peer.anyIpv4(), Port.allTraffic());
+    const testCfn1 = test1.node.defaultChild as CfnSecurityGroup;
+    testCfn1.cfnOptions.metadata = {
+      'aws:cdk:path1': 'Default/test/SecurityGroup/Resource',
+    };
+    const test2 = new SecurityGroup(stack, 'rSg2', { vpc });
+    test2.addIngressRule(Peer.anyIpv4(), Port.allTraffic());
+    const testCfn2 = test2.node.defaultChild as CfnSecurityGroup;
+    testCfn2.cfnOptions.metadata = {
+      'aws:cdk:path2': 'Default/test/SecurityGroup/Resource',
+    };
+    NagSuppressions.addResourceSuppressions(
+      [test1, test2],
+      [{ id: 'AwsSolutions-EC23', reason: 'lorem ipsum' }]
     );
-    expect(messages).not.toContainEqual(
-      expect.objectContaining({
-        entry: expect.objectContaining({
-          data: expect.stringContaining(
-            'AwsSolutions-EC2SecurityGroupDescription:'
-          ),
-        }),
-      })
+    const synthed = SynthUtils.synthesize(stack);
+    expect(synthed).toHaveResourceLike(
+      'AWS::EC2::SecurityGroup',
+      {
+        Metadata: {
+          'aws:cdk:path1': stringLike('*Resource*'),
+          cdk_nag: {
+            rules_to_suppress: [
+              {
+                id: 'AwsSolutions-EC23',
+                reason: 'lorem ipsum',
+              },
+            ],
+          },
+        },
+      },
+      1
     );
+    expect(synthed).toHaveResourceLike(
+      'AWS::EC2::SecurityGroup',
+      {
+        Metadata: {
+          'aws:cdk:path2': stringLike('*Resource*'),
+          cdk_nag: {
+            rules_to_suppress: [
+              {
+                id: 'AwsSolutions-EC23',
+                reason: 'lorem ipsum',
+              },
+            ],
+          },
+        },
+      },
+      1
+    );
+  });
+  test('Multi resource suppression does not duplicate', () => {
+    const stack = new Stack();
+    const vpc = new Vpc(stack, 'rVPC');
+    const suppressions = [
+      {
+        id: 'foo',
+        reason: 'Never gonna give you up.',
+      },
+    ];
+    NagSuppressions.addResourceSuppressions([vpc, vpc], suppressions, true);
+    SynthUtils.synthesize(stack);
+    for (const child of vpc.node.findAll()) {
+      if (child instanceof CfnResource) {
+        expect(child.getMetadata('cdk_nag')?.rules_to_suppress).toEqual(
+          suppressions
+        );
+      }
+    }
+  });
+  test('Resource array cannot be empty', () => {
+    expect(() =>
+      NagSuppressions.addResourceSuppressions(
+        [],
+        [{ id: 'AwsSolutions-EC23', reason: 'lorem ipsum' }]
+      )
+    ).toThrowError();
   });
   test('Test suppressions with addResourceSuppressions function on a CfnResource based Construct', () => {
     const stack = new Stack();
@@ -322,22 +358,12 @@ describe('Rule suppression system', () => {
       },
     ]);
     const messages = SynthUtils.synthesize(stack).messages;
-    expect(messages).not.toContainEqual(
-      expect.objectContaining({
-        entry: expect.objectContaining({
-          data: expect.stringContaining('AwsSolutions-EC23:'),
-        }),
-      })
-    );
-    expect(messages).not.toContainEqual(
-      expect.objectContaining({
-        entry: expect.objectContaining({
-          data: expect.stringContaining(
-            'AwsSolutions-EC2SecurityGroupDescription:'
-          ),
-        }),
-      })
-    );
+    expectMessages(messages, {
+      notContaining: [
+        'AwsSolutions-EC23:',
+        'AwsSolutions-EC2SecurityGroupDescription:',
+      ],
+    });
   });
   test('addResourceSuppressions function does not override previous suppressions on a CfnResource based Construct', () => {
     const stack = new Stack();
@@ -378,7 +404,7 @@ describe('Rule suppression system', () => {
       1
     );
   });
-  test('Test supressions with addResourceSuppressionByPath function on a CfnResource based Construct', () => {
+  test('Test suppressions with addResourceSuppressionsByPath function on a CfnResource based Construct', () => {
     const stack = new Stack();
     Aspects.of(stack).add(new AwsSolutionsChecks());
     const test = new SecurityGroup(stack, 'rSg', {
@@ -394,22 +420,107 @@ describe('Rule suppression system', () => {
       },
     ]);
     const messages = SynthUtils.synthesize(stack).messages;
-    expect(messages).not.toContainEqual(
-      expect.objectContaining({
-        entry: expect.objectContaining({
-          data: expect.stringContaining('AwsSolutions-EC23:'),
-        }),
-      })
+    expectMessages(messages, {
+      notContaining: [
+        'AwsSolutions-EC23:',
+        'AwsSolutions-EC2SecurityGroupDescription:',
+      ],
+    });
+  });
+  test('Test suppressions with addResourceSuppressionsByPath on multiple resources', () => {
+    const stack = new Stack();
+    const vpc = new Vpc(stack, 'rVpc');
+    Aspects.of(stack).add(new AwsSolutionsChecks());
+    const test1 = new SecurityGroup(stack, 'rSg1', {
+      vpc,
+    });
+    test1.addIngressRule(Peer.anyIpv4(), Port.allTraffic());
+    const testCfn1 = test1.node.defaultChild as CfnSecurityGroup;
+    testCfn1.cfnOptions.metadata = {
+      'aws:cdk:path1': 'Default/test/SecurityGroup/Resource',
+    };
+    const test2 = new SecurityGroup(stack, 'rSg2', {
+      vpc,
+    });
+    test1.addIngressRule(Peer.anyIpv4(), Port.allTraffic());
+    const testCfn2 = test2.node.defaultChild as CfnSecurityGroup;
+    testCfn2.cfnOptions.metadata = {
+      'aws:cdk:path2': 'Default/test/SecurityGroup/Resource',
+    };
+    NagSuppressions.addResourceSuppressionsByPath(
+      stack,
+      [test1.node.path, test2.node.path],
+      [{ id: 'AwsSolutions-EC23', reason: 'lorem ipsum' }]
     );
-    expect(messages).not.toContainEqual(
-      expect.objectContaining({
-        entry: expect.objectContaining({
-          data: expect.stringContaining(
-            'AwsSolutions-EC2SecurityGroupDescription:'
-          ),
-        }),
-      })
+    const synthed = SynthUtils.synthesize(stack);
+    expect(synthed).toHaveResourceLike(
+      'AWS::EC2::SecurityGroup',
+      {
+        Metadata: {
+          'aws:cdk:path1': stringLike('*Resource*'),
+          cdk_nag: {
+            rules_to_suppress: [
+              {
+                id: 'AwsSolutions-EC23',
+                reason: 'lorem ipsum',
+              },
+            ],
+          },
+        },
+      },
+      1
     );
+    expect(synthed).toHaveResourceLike(
+      'AWS::EC2::SecurityGroup',
+      {
+        Metadata: {
+          'aws:cdk:path2': stringLike('*Resource*'),
+          cdk_nag: {
+            rules_to_suppress: [
+              {
+                id: 'AwsSolutions-EC23',
+                reason: 'lorem ipsum',
+              },
+            ],
+          },
+        },
+      },
+      1
+    );
+  });
+  test('addResourceSuppressionsByPath on multiple resources does not duplicate', () => {
+    const stack = new Stack();
+    const vpc = new Vpc(stack, 'rVpc');
+    const suppressions = [
+      {
+        id: 'foo',
+        reason: 'Never gonna give you up.',
+      },
+    ];
+    NagSuppressions.addResourceSuppressionsByPath(
+      stack,
+      [vpc.node.path, vpc.node.path],
+      suppressions,
+      true
+    );
+    SynthUtils.synthesize(stack);
+    for (const child of vpc.node.findAll()) {
+      if (child instanceof CfnResource) {
+        expect(child.getMetadata('cdk_nag')?.rules_to_suppress).toEqual(
+          suppressions
+        );
+      }
+    }
+  });
+  test('Path array of addResourceSuppressionsByPath cannot be empty', () => {
+    const stack = new Stack();
+    expect(() =>
+      NagSuppressions.addResourceSuppressionsByPath(
+        stack,
+        [],
+        [{ id: 'AwsSolutions-EC23', reason: 'lorem ipsum' }]
+      )
+    ).toThrowError();
   });
   test('addStackSuppressions function does not override previous suppressions on a Stack', () => {
     const stack = new Stack();
@@ -649,7 +760,7 @@ describe('Rule suppression system', () => {
       1
     );
   });
-  test('combined supressions with addResourceSuppressions and addStackSuppressions', () => {
+  test('combined suppressions with addResourceSuppressions and addStackSuppressions', () => {
     const stack = new Stack();
     Aspects.of(stack).add(new AwsSolutionsChecks());
     NagSuppressions.addStackSuppressions(stack, [
@@ -667,22 +778,12 @@ describe('Rule suppression system', () => {
       { id: 'AwsSolutions-EC23', reason: 'lorem ipsum' },
     ]);
     const messages = SynthUtils.synthesize(stack).messages;
-    expect(messages).not.toContainEqual(
-      expect.objectContaining({
-        entry: expect.objectContaining({
-          data: expect.stringContaining('AwsSolutions-EC23:'),
-        }),
-      })
-    );
-    expect(messages).not.toContainEqual(
-      expect.objectContaining({
-        entry: expect.objectContaining({
-          data: expect.stringContaining(
-            'AwsSolutions-EC2SecurityGroupDescription:'
-          ),
-        }),
-      })
-    );
+    expectMessages(messages, {
+      notContaining: [
+        'AwsSolutions-EC23:',
+        'AwsSolutions-EC2SecurityGroupDescription:',
+      ],
+    });
   });
   test('Resource suppressions change metadata on L1 Constructs', () => {
     const stack = new Stack();
@@ -727,13 +828,9 @@ describe('Rule suppression system', () => {
       { id: 'AwsSolutions-EC23', reason: 'lorem ipsum' },
     ]);
     const messages = SynthUtils.synthesize(stack).messages;
-    expect(messages).toContainEqual(
-      expect.objectContaining({
-        entry: expect.objectContaining({
-          data: expect.stringContaining('CdkNagSuppression: AwsSolutions-EC23'),
-        }),
-      })
-    );
+    expectMessages(messages, {
+      containing: ['CdkNagSuppression: AwsSolutions-EC23'],
+    });
   });
   test('suppressed rule logging disabled', () => {
     const stack = new Stack();
@@ -747,15 +844,10 @@ describe('Rule suppression system', () => {
       { id: 'AwsSolutions-EC23', reason: 'lorem ipsum' },
     ]);
     const messages = SynthUtils.synthesize(stack).messages;
-    expect(messages).not.toContainEqual(
-      expect.objectContaining({
-        entry: expect.objectContaining({
-          data: expect.stringContaining('CdkNagSuppression: AwsSolutions-EC23'),
-        }),
-      })
-    );
+    expectMessages(messages, {
+      notContaining: ['CdkNagSuppression: AwsSolutions-EC23'],
+    });
   });
-
   test('Test path miss', () => {
     const stack = new Stack();
     try {
@@ -780,13 +872,9 @@ describe('Rule explanations', () => {
     });
     test.addIngressRule(Peer.anyIpv4(), Port.allTraffic());
     const messages = SynthUtils.synthesize(stack).messages;
-    expect(messages).not.toContainEqual(
-      expect.objectContaining({
-        entry: expect.objectContaining({
-          data: expect.stringContaining('Large port ranges'),
-        }),
-      })
-    );
+    expectMessages(messages, {
+      notContaining: ['Large port ranges'],
+    });
   });
   test('Test no explanation', () => {
     const stack = new Stack();
@@ -796,13 +884,9 @@ describe('Rule explanations', () => {
     });
     test.addIngressRule(Peer.anyIpv4(), Port.allTraffic());
     const messages = SynthUtils.synthesize(stack).messages;
-    expect(messages).not.toContainEqual(
-      expect.objectContaining({
-        entry: expect.objectContaining({
-          data: expect.stringContaining('Large port ranges'),
-        }),
-      })
-    );
+    expectMessages(messages, {
+      notContaining: ['Large port ranges'],
+    });
   });
   test('Test explanation', () => {
     const stack = new Stack();
@@ -812,28 +896,24 @@ describe('Rule explanations', () => {
     });
     test.addIngressRule(Peer.anyIpv4(), Port.allTraffic());
     const messages = SynthUtils.synthesize(stack).messages;
-    expect(messages).toContainEqual(
-      expect.objectContaining({
-        entry: expect.objectContaining({
-          data: expect.stringContaining('Large port ranges'),
-        }),
-      })
-    );
+    expectMessages(messages, {
+      containing: ['Large port ranges'],
+    });
   });
 });
 
 describe('Rule exception handling', () => {
   const ERROR_MESSAGE = 'oops!';
   class BadPack extends NagPack {
-    constructor(props?: NagPackProps) {
+    constructor(props?: NagPackProps, packName?: string) {
       super(props);
-      this.packName = 'Bad.Pack';
+      this.packName = packName ?? 'Bad.Pack';
     }
     public visit(node: IConstruct): void {
       if (node instanceof CfnResource) {
         this.applyRule({
           ruleSuffixOverride: 'BadRule',
-          info: 'This is a imporperly made rule.',
+          info: 'This is an improperly made rule.',
           explanation: 'This will throw an error',
           level: NagMessageLevel.ERROR,
           rule: function (node2: CfnResource): NagRuleCompliance {
@@ -852,26 +932,18 @@ describe('Rule exception handling', () => {
     Aspects.of(stack).add(new BadPack());
     new CfnBucket(stack, 'rBucket');
     const messages = SynthUtils.synthesize(stack).messages;
-    expect(messages).toContainEqual(
-      expect.objectContaining({
-        entry: expect.objectContaining({
-          data: expect.stringContaining('CdkNagValidationFailure:'),
-        }),
-      })
-    );
+    expectMessages(messages, {
+      containing: ['CdkNagValidationFailure[Bad.Pack-BadRule]:'],
+    });
   });
   test('Error properly handles verbose logging', () => {
     const stack = new Stack();
     Aspects.of(stack).add(new BadPack({ verbose: true }));
     new CfnBucket(stack, 'rBucket');
     const messages = SynthUtils.synthesize(stack).messages;
-    expect(messages).toContainEqual(
-      expect.objectContaining({
-        entry: expect.objectContaining({
-          data: expect.stringContaining(ERROR_MESSAGE),
-        }),
-      })
-    );
+    expectMessages(messages, {
+      containing: [ERROR_MESSAGE],
+    });
   });
   test('Error can be suppressed', () => {
     const stack = new Stack();
@@ -882,13 +954,138 @@ describe('Rule exception handling', () => {
       ],
     });
     const messages = SynthUtils.synthesize(stack).messages;
-    expect(messages).not.toContainEqual(
-      expect.objectContaining({
-        entry: expect.objectContaining({
-          data: expect.stringContaining('CdkNagValidationFailure:'),
-        }),
-      })
+    expectMessages(messages, {
+      notContaining: ['CdkNagValidationFailure[Bad.Pack-BadRule]:'],
+    });
+  });
+  test('Specific errors can be suppressed', () => {
+    const stack = new Stack();
+    Aspects.of(stack).add(new BadPack({ verbose: true }, 'Bad.Pack.1'));
+    Aspects.of(stack).add(new BadPack({ verbose: true }, 'Bad.Pack.2'));
+    new CfnBucket(stack, 'rBucket').addMetadata('cdk_nag', {
+      rules_to_suppress: [
+        {
+          id: 'CdkNagValidationFailure',
+          reason: 'at least 10 characters',
+          appliesTo: ['Bad.Pack.1-BadRule'],
+        },
+      ],
+    });
+    const messages = SynthUtils.synthesize(stack).messages;
+    expectMessages(messages, {
+      notContaining: ['CdkNagValidationFailure[Bad.Pack.1-BadRule]:'],
+      containing: ['CdkNagValidationFailure[Bad.Pack.2-BadRule]:'],
+    });
+  });
+  test('Suppressing a rule suppresses errors for the rule', () => {
+    const stack = new Stack();
+    Aspects.of(stack).add(new BadPack({ verbose: true }, 'Bad.Pack.1'));
+    Aspects.of(stack).add(new BadPack({ verbose: true }, 'Bad.Pack.2'));
+    new CfnBucket(stack, 'rBucket').addMetadata('cdk_nag', {
+      rules_to_suppress: [
+        {
+          id: 'Bad.Pack.1-BadRule',
+          reason: 'at least 10 characters',
+        },
+      ],
+    });
+    const messages = SynthUtils.synthesize(stack).messages;
+    expectMessages(messages, {
+      notContaining: ['CdkNagValidationFailure[Bad.Pack.1-BadRule]:'],
+      containing: ['CdkNagValidationFailure[Bad.Pack.2-BadRule]:'],
+    });
+  });
+  test.each([
+    [
+      'NagPack level suppression',
+      {
+        id: 'Bad.Pack.1-BadRule',
+        reason: 'at least 10 characters',
+      },
+    ],
+    [
+      'CdkNagValidationFailure suppression',
+      {
+        id: 'CdkNagValidationFailure',
+        reason: 'at least 10 characters',
+      },
+    ],
+    [
+      'CdkNagValidationFailure granular suppression',
+      {
+        id: 'CdkNagValidationFailure',
+        reason: 'at least 10 characters',
+        appliesTo: ['Bad.Pack.1-BadRule'],
+      },
+    ],
+  ])(
+    'Suppression ignore conditions apply to exceptions with %s',
+    (_testName, suppressionRule) => {
+      const stack = new Stack();
+      Aspects.of(stack).add(
+        new BadPack(
+          {
+            suppressionIgnoreCondition: new SuppressionIgnoreAlways('IGNORED.'),
+          },
+          'Bad.Pack.1'
+        )
+      );
+      new CfnBucket(stack, 'rBucket').addMetadata('cdk_nag', {
+        rules_to_suppress: [suppressionRule],
+      });
+      const messages = SynthUtils.synthesize(stack).messages;
+      expectMessages(messages, {
+        containing: [
+          'CdkNagValidationFailure[Bad.Pack.1-BadRule]:',
+          'The suppression for Bad.Pack.1-BadRule was ignored',
+        ],
+      });
+    }
+  );
+  test('Suppressing CdkNagValidationFailure still suppresses other failures when one has a suppression ignore', () => {
+    const stack = new Stack();
+    Aspects.of(stack).add(
+      new BadPack(
+        {
+          suppressionIgnoreCondition: new SuppressionIgnoreAlways('IGNORED.'),
+        },
+        'Bad.Pack.1'
+      )
     );
+    Aspects.of(stack).add(new BadPack({ verbose: true }, 'Bad.Pack.2'));
+    new CfnBucket(stack, 'rBucket').addMetadata('cdk_nag', {
+      rules_to_suppress: [
+        {
+          id: 'CdkNagValidationFailure',
+          reason: 'at least 10 characters',
+        },
+      ],
+    });
+    const messages = SynthUtils.synthesize(stack).messages;
+    expectMessages(messages, {
+      containing: [
+        'CdkNagValidationFailure[Bad.Pack.1-BadRule]:',
+        'The suppression for Bad.Pack.1-BadRule was ignored',
+      ],
+      notContaining: ['CdkNagValidationFailure[Bad.Pack.2-BadRule]:'],
+    });
+  });
+  test('Granularly suppressing a rule does not suppress errors for the rule', () => {
+    const stack = new Stack();
+    Aspects.of(stack).add(new BadPack({ verbose: true }, 'Bad.Pack.1'));
+    new CfnBucket(stack, 'rBucket').addMetadata('cdk_nag', {
+      rules_to_suppress: [
+        {
+          id: 'Bad.Pack.1-BadRule',
+          reason: 'at least 10 characters',
+          appliesTo: ['foo'],
+        },
+      ],
+    });
+    const messages = SynthUtils.synthesize(stack).messages;
+    expectMessages(messages, {
+      containing: ['CdkNagValidationFailure[Bad.Pack.1-BadRule]:'],
+    });
   });
   test('Suppressed validation error is logged with suppressed rule logging', () => {
     const stack = new Stack();
@@ -899,15 +1096,32 @@ describe('Rule exception handling', () => {
       ],
     });
     const messages = SynthUtils.synthesize(stack).messages;
-    expect(messages).toContainEqual(
-      expect.objectContaining({
-        entry: expect.objectContaining({
-          data: expect.stringContaining(
-            'CdkNagSuppression: CdkNagValidationFailure'
-          ),
-        }),
-      })
-    );
+    expectMessages(messages, {
+      containing: [
+        'CdkNagSuppression[Bad.Pack-BadRule]: CdkNagValidationFailure',
+      ],
+    });
+  });
+  test('Suppressed validation error is logged with specifically suppressed rule logging', () => {
+    const stack = new Stack();
+    Aspects.of(stack).add(new BadPack({ logIgnores: true }, 'Bad.Pack.1'));
+    Aspects.of(stack).add(new BadPack({}, 'Bad.Pack.2'));
+    new CfnBucket(stack, 'rBucket').addMetadata('cdk_nag', {
+      rules_to_suppress: [
+        {
+          id: 'CdkNagValidationFailure',
+          reason: 'at least 10 characters',
+          appliesTo: ['Bad.Pack.1-BadRule'],
+        },
+      ],
+    });
+    const messages = SynthUtils.synthesize(stack).messages;
+    expectMessages(messages, {
+      containing: [
+        'CdkNagSuppression[Bad.Pack.1-BadRule]: CdkNagValidationFailure',
+        'CdkNagValidationFailure[Bad.Pack.2-BadRule]:',
+      ],
+    });
   });
   test('Encoded Intrinsic function with resolveIfPrimitive error handling', () => {
     const stack = new Stack();
@@ -924,186 +1138,5 @@ describe('Rule exception handling', () => {
     expect(() => {
       NagRules.resolveIfPrimitive(bucket, bucket.objectLockEnabled);
     }).not.toThrowError();
-  });
-});
-
-describe('Report system', () => {
-  class TestPack extends NagPack {
-    lines = new Array<string>();
-    constructor(props?: NagPackProps) {
-      super(props);
-      this.packName = 'Test';
-    }
-    public visit(node: IConstruct): void {
-      if (node instanceof CfnResource) {
-        const compliances = [
-          NagRuleCompliance.NON_COMPLIANT,
-          NagRuleCompliance.COMPLIANT,
-          NagRuleCompliance.NOT_APPLICABLE,
-        ];
-        compliances.forEach((compliance) => {
-          this.applyRule({
-            ruleSuffixOverride: compliance,
-            info: 'foo.',
-            explanation: 'bar.',
-            level: NagMessageLevel.ERROR,
-            rule: function (node2: CfnResource): NagRuleCompliance {
-              if (node2.cfnResourceType === 'N/A') {
-                return NagRuleCompliance.NOT_APPLICABLE;
-              } else if (node2.cfnResourceType !== 'Error') {
-                return compliance;
-              }
-              throw Error('foobar');
-            },
-            node: node,
-          });
-        });
-      }
-    }
-
-    protected writeToStackComplianceReport(
-      params: IApplyRule,
-      ruleId: string,
-      compliance: NagRuleCompliance.COMPLIANT | NagRuleCompliance.NON_COMPLIANT,
-      explanation: string = ''
-    ): void {
-      this.lines.push(
-        this.createComplianceReportLine(params, ruleId, compliance, explanation)
-      );
-      const stackName = params.node.stack.nested
-        ? Names.uniqueId(params.node.stack)
-        : params.node.stack.stackName;
-      const fileName = `${this.packName}-${stackName}-NagReport.csv`;
-      if (!this.reportStacks.includes(fileName)) {
-        this.reportStacks.push(fileName);
-      }
-    }
-  }
-
-  test('Reports are generated for all stacks by default', () => {
-    const app = new App();
-    const stack = new Stack(app, 'Stack1');
-    const stack2 = new Stack(app, 'Stack2');
-    const pack = new TestPack();
-    Aspects.of(app).add(pack);
-    new SecurityGroup(stack, 'rSg', {
-      vpc: new Vpc(stack, 'rVpc'),
-    });
-    new Bucket(stack2, 'rBucket');
-    app.synth();
-    expect(pack.readReportStacks.length).toEqual(2);
-  });
-  test('Reports are initialized for stacks with no relevant resources', () => {
-    const app = new App();
-    const stack = new Stack(app, 'Stack1');
-    const pack = new TestPack();
-    Aspects.of(app).add(pack);
-    new CfnResource(stack, 'rNAResource', {
-      type: 'N/A',
-    });
-    app.synth();
-    expect(pack.readReportStacks.length).toEqual(1);
-    expect(pack.lines.length).toBe(0);
-  });
-  test('Nested Stack reports do not contain tokens in names', () => {
-    const app = new App();
-    const parent = new Stack(app, 'Parent');
-    const nested = new NestedStack(parent, 'Child', {});
-    const pack = new TestPack();
-    Aspects.of(app).add(pack);
-    new Bucket(parent, 'rBucket');
-    new Bucket(nested, 'rBucket');
-    app.synth();
-    pack.readReportStacks.forEach((r) => {
-      expect(Token.isUnresolved(r)).toBeFalsy();
-    });
-  });
-  test('Compliant and Non-Compliant values are written properly', () => {
-    const app = new App();
-    const stack = new Stack(app, 'Stack1');
-    const pack = new TestPack();
-    Aspects.of(app).add(pack);
-    new CfnResource(stack, 'rResource', { type: 'foo' });
-    app.synth();
-    const expectedOuput = [
-      '"Test-Compliant","Stack1/rResource","Compliant","N/A","Error","foo."\n',
-      '"Test-Non-Compliant","Stack1/rResource","Non-Compliant","N/A","Error","foo."\n',
-    ];
-    expect(pack.lines.sort()).toEqual(expectedOuput.sort());
-  });
-  test('Suppression values are written properly', () => {
-    const app = new App();
-    const stack = new Stack(app, 'Stack1');
-    const pack = new TestPack();
-    Aspects.of(app).add(pack);
-    const resource = new CfnResource(stack, 'rResource', { type: 'foo' });
-    NagSuppressions.addResourceSuppressions(resource, [
-      {
-        id: `${pack.readPackName}-${NagRuleCompliance.NON_COMPLIANT}`,
-        reason: 'lorem ipsum',
-      },
-    ]);
-    app.synth();
-    const expectedOuput = [
-      '"Test-Compliant","Stack1/rResource","Compliant","N/A","Error","foo."\n',
-      '"Test-Non-Compliant","Stack1/rResource","Suppressed","lorem ipsum","Error","foo."\n',
-    ];
-    expect(pack.lines.sort()).toEqual(expectedOuput.sort());
-  });
-  test('Suppression values are written properly when multibyte characters are used in reason', () => {
-    const app = new App();
-    const stack = new Stack(app, 'Stack1');
-    const pack = new TestPack();
-    Aspects.of(app).add(pack);
-    const resource = new CfnResource(stack, 'rResource', { type: 'foo' });
-    NagSuppressions.addResourceSuppressions(resource, [
-      {
-        id: `${pack.readPackName}-${NagRuleCompliance.NON_COMPLIANT}`,
-        reason: 'あいうえおかきくけこ',
-      },
-    ]);
-    app.synth();
-    const expectedOuput = [
-      '"Test-Compliant","Stack1/rResource","Compliant","N/A","Error","foo."\n',
-      '"Test-Non-Compliant","Stack1/rResource","Suppressed","あいうえおかきくけこ","Error","foo."\n',
-    ];
-    expect(pack.lines.sort()).toEqual(expectedOuput.sort());
-  });
-  test('Error values are written properly', () => {
-    const app = new App();
-    const stack = new Stack(app, 'Stack1');
-    const pack = new TestPack();
-    Aspects.of(app).add(pack);
-    const resource = new CfnResource(stack, 'rResource', { type: 'Error' });
-    NagSuppressions.addResourceSuppressions(resource, [
-      {
-        id: `${pack.readPackName}-${NagRuleCompliance.NON_COMPLIANT}`,
-        reason: 'lorem ipsum',
-      },
-    ]);
-    app.synth();
-    const expectedOuput = [
-      '"Test-Non-Compliant","Stack1/rResource","UNKNOWN","N/A","Error","foo."\n',
-      '"Test-Compliant","Stack1/rResource","UNKNOWN","N/A","Error","foo."\n',
-      '"Test-N/A","Stack1/rResource","UNKNOWN","N/A","Error","foo."\n',
-    ];
-    expect(pack.lines.sort()).toEqual(expectedOuput.sort());
-  });
-  test('Suppressed error values are escaped and written properly', () => {
-    const app = new App();
-    const stack = new Stack(app, 'Stack1');
-    const pack = new TestPack();
-    Aspects.of(app).add(pack);
-    const resource = new CfnResource(stack, 'rResource', { type: 'Error' });
-    NagSuppressions.addResourceSuppressions(resource, [
-      { id: 'CdkNagValidationFailure', reason: '"quoted "lorem" ipsum"' },
-    ]);
-    app.synth();
-    const expectedOuput = [
-      '"Test-Compliant","Stack1/rResource","Suppressed","""quoted ""lorem"" ipsum""","Error","foo."\n',
-      '"Test-N/A","Stack1/rResource","Suppressed","""quoted ""lorem"" ipsum""","Error","foo."\n',
-      '"Test-Non-Compliant","Stack1/rResource","Suppressed","""quoted ""lorem"" ipsum""","Error","foo."\n',
-    ];
-    expect(pack.lines.sort()).toEqual(expectedOuput.sort());
   });
 });

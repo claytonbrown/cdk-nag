@@ -14,6 +14,7 @@ import {
   StarPrincipal,
 } from 'aws-cdk-lib/aws-iam';
 import {
+  BlockPublicAccess,
   Bucket,
   BucketAccessControl,
   BucketEncryption,
@@ -22,6 +23,7 @@ import {
   CfnBucketPolicy,
 } from 'aws-cdk-lib/aws-s3';
 import { Aspects, Stack } from 'aws-cdk-lib/core';
+import { TestPack, TestType, validateStack } from './utils';
 import {
   S3BucketDefaultLockEnabled,
   S3BucketLevelPublicAccessProhibited,
@@ -29,13 +31,11 @@ import {
   S3BucketPublicReadProhibited,
   S3BucketPublicWriteProhibited,
   S3BucketReplicationEnabled,
-  S3BucketServerSideEncryptionEnabled,
   S3BucketSSLRequestsOnly,
   S3BucketVersioningEnabled,
   S3DefaultEncryptionKMS,
   S3WebBucketOAIAccess,
 } from '../../src/rules/s3';
-import { validateStack, TestType, TestPack } from './utils';
 
 const testPack = new TestPack([
   S3BucketDefaultLockEnabled,
@@ -44,7 +44,6 @@ const testPack = new TestPack([
   S3BucketPublicReadProhibited,
   S3BucketPublicWriteProhibited,
   S3BucketReplicationEnabled,
-  S3BucketServerSideEncryptionEnabled,
   S3BucketSSLRequestsOnly,
   S3BucketVersioningEnabled,
   S3DefaultEncryptionKMS,
@@ -88,10 +87,6 @@ describe('Amazon Simple Storage Service (S3)', () => {
   describe('S3BucketLevelPublicAccessProhibited: S3 Buckets prohibit public access through bucket level settings', () => {
     const ruleId = 'S3BucketLevelPublicAccessProhibited';
     test('Noncompliance 1', () => {
-      new Bucket(stack, 'rBucket');
-      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
-    });
-    test('Noncompliance 2', () => {
       new Bucket(stack, 'rBucket', {
         blockPublicAccess: {
           blockPublicPolicy: true,
@@ -102,8 +97,21 @@ describe('Amazon Simple Storage Service (S3)', () => {
       });
       validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
     });
-    test('Compliance', () => {
+    test('Noncompliance 2', () => {
       new Bucket(stack, 'rBucket', {
+        blockPublicAccess: new BlockPublicAccess({ blockPublicAcls: true }),
+      });
+      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+    });
+    test('Noncompliance 3', () => {
+      new CfnBucket(stack, 'Bucket', {
+        publicAccessBlockConfiguration: { blockPublicAcls: true },
+      });
+      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+    });
+    test('Compliance', () => {
+      new Bucket(stack, 'rBucket');
+      new Bucket(stack, 'rBucket2', {
         blockPublicAccess: {
           blockPublicPolicy: true,
           blockPublicAcls: true,
@@ -118,19 +126,31 @@ describe('Amazon Simple Storage Service (S3)', () => {
   describe('S3BucketLoggingEnabled: S3 Buckets have server access logs enabled', () => {
     const ruleId = 'S3BucketLoggingEnabled';
     test('Noncompliance 1', () => {
-      new Bucket(stack, 'rBucket');
+      new Bucket(stack, 'Bucket');
+      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+    });
+    test('Noncompliance 2', () => {
+      new Bucket(stack, 'LogsBucket', { bucketName: 'foo' });
+      new Bucket(stack, 'Bucket', {
+        serverAccessLogsBucket: Bucket.fromBucketName(
+          stack,
+          'LogsBucketFromName',
+          'foobar'
+        ),
+      });
       validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
     });
     test('Compliance', () => {
-      new Bucket(stack, 'rBucket', {
+      new Bucket(stack, 'LogsBucket', { bucketName: 'bar' });
+      new Bucket(stack, 'Bucket', {
         serverAccessLogsBucket: Bucket.fromBucketName(
           stack,
-          'rLogsBucket',
-          'foo'
+          'LogsBucketFromName',
+          'bar'
         ),
       });
-      new Bucket(stack, 'rBucket2', {
-        serverAccessLogsPrefix: 'foo',
+      new Bucket(stack, 'Bucket2', {
+        serverAccessLogsBucket: new Bucket(stack, 'LogsBucket2'),
       });
       validateStack(stack, ruleId, TestType.COMPLIANCE);
     });
@@ -259,20 +279,6 @@ describe('Amazon Simple Storage Service (S3)', () => {
           }).roleArn,
           rules: [{ destination: { bucket: 'foo' }, status: 'Enabled' }],
         },
-      });
-      validateStack(stack, ruleId, TestType.COMPLIANCE);
-    });
-  });
-
-  describe('S3BucketServerSideEncryptionEnabled: S3 Buckets have default server-side encryption enabled', () => {
-    const ruleId = 'S3BucketServerSideEncryptionEnabled';
-    test('Noncompliance 1', () => {
-      new Bucket(stack, 'rBucket');
-      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
-    });
-    test('Compliance', () => {
-      new Bucket(stack, 'rBucket', {
-        encryption: BucketEncryption.S3_MANAGED,
       });
       validateStack(stack, ruleId, TestType.COMPLIANCE);
     });

@@ -2,29 +2,41 @@
 Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
-import { AutoScalingGroup, Monitoring } from 'aws-cdk-lib/aws-autoscaling';
+import {
+  AutoScalingGroup,
+  CfnAutoScalingGroup,
+  CfnLaunchConfiguration,
+  Monitoring,
+  BlockDeviceVolume as ASBlockDeviceVolume,
+} from 'aws-cdk-lib/aws-autoscaling';
 import { BackupPlan, BackupResource } from 'aws-cdk-lib/aws-backup';
 import {
+  BlockDeviceVolume,
+  CfnInstance,
+  CfnLaunchTemplate,
+  CfnSecurityGroup,
+  CfnSecurityGroupIngress,
+  CfnVolume,
   Instance,
   InstanceClass,
+  InstanceSize,
   InstanceType,
+  LaunchTemplate,
   MachineImage,
   Peer,
   Port,
   SecurityGroup,
-  Vpc,
-  CfnInstance,
-  CfnSecurityGroupIngress,
-  CfnSecurityGroup,
-  InstanceSize,
   Volume,
+  Vpc,
 } from 'aws-cdk-lib/aws-ec2';
 import { PolicyStatement } from 'aws-cdk-lib/aws-iam';
-import { Aspects, Stack, Size } from 'aws-cdk-lib/core';
+import { Aspects, Size, Stack } from 'aws-cdk-lib/core';
+import { TestPack, TestType, validateStack } from './utils';
 import {
   EC2EBSInBackupPlan,
   EC2EBSOptimizedInstance,
   EC2EBSVolumeEncrypted,
+  EC2IMDSv2Enabled,
   EC2InstanceDetailedMonitoringEnabled,
   EC2InstanceNoPublicIp,
   EC2InstanceProfileAttached,
@@ -35,12 +47,12 @@ import {
   EC2RestrictedSSH,
   EC2SecurityGroupDescription,
 } from '../../src/rules/ec2';
-import { validateStack, TestType, TestPack } from './utils';
 
 const testPack = new TestPack([
   EC2EBSInBackupPlan,
   EC2EBSOptimizedInstance,
   EC2EBSVolumeEncrypted,
+  EC2IMDSv2Enabled,
   EC2InstanceDetailedMonitoringEnabled,
   EC2InstanceNoPublicIp,
   EC2InstanceProfileAttached,
@@ -114,7 +126,7 @@ describe('Amazon Elastic Compute Cloud (Amazon EC2)', () => {
       new Instance(stack, 'rInstance', {
         vpc: new Vpc(stack, 'rVpc'),
         instanceType: InstanceType.of(InstanceClass.C3, InstanceSize.XLARGE),
-        machineImage: MachineImage.latestAmazonLinux(),
+        machineImage: MachineImage.latestAmazonLinux2(),
       });
       validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
     });
@@ -122,12 +134,12 @@ describe('Amazon Elastic Compute Cloud (Amazon EC2)', () => {
       new Instance(stack, 'rInstance', {
         vpc: new Vpc(stack, 'rVpc'),
         instanceType: InstanceType.of(InstanceClass.C3, InstanceSize.XLARGE),
-        machineImage: MachineImage.latestAmazonLinux(),
+        machineImage: MachineImage.latestAmazonLinux2(),
       }).instance.ebsOptimized = true;
       new Instance(stack, 'rInstance2', {
         vpc: new Vpc(stack, 'rVpc2'),
         instanceType: InstanceType.of(InstanceClass.A1, InstanceSize.MEDIUM),
-        machineImage: MachineImage.latestAmazonLinux(),
+        machineImage: MachineImage.latestAmazonLinux2(),
       });
       new CfnInstance(stack, 'rInstance3');
       validateStack(stack, ruleId, TestType.COMPLIANCE);
@@ -140,7 +152,7 @@ describe('Amazon Elastic Compute Cloud (Amazon EC2)', () => {
       new Instance(stack, 'rInstance', {
         vpc: new Vpc(stack, 'rVpc'),
         instanceType: new InstanceType(InstanceClass.T3),
-        machineImage: MachineImage.latestAmazonLinux(),
+        machineImage: MachineImage.latestAmazonLinux2(),
       });
       validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
     });
@@ -148,7 +160,7 @@ describe('Amazon Elastic Compute Cloud (Amazon EC2)', () => {
       new AutoScalingGroup(stack, 'rAsg', {
         vpc: new Vpc(stack, 'rVpc'),
         instanceType: new InstanceType(InstanceClass.T3),
-        machineImage: MachineImage.latestAmazonLinux(),
+        machineImage: MachineImage.latestAmazonLinux2(),
         instanceMonitoring: Monitoring.BASIC,
       });
       validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
@@ -157,12 +169,12 @@ describe('Amazon Elastic Compute Cloud (Amazon EC2)', () => {
       new Instance(stack, 'rInstance', {
         vpc: new Vpc(stack, 'rVpc'),
         instanceType: new InstanceType(InstanceClass.T3),
-        machineImage: MachineImage.latestAmazonLinux(),
+        machineImage: MachineImage.latestAmazonLinux2(),
       }).instance.monitoring = true;
       new AutoScalingGroup(stack, 'rAsg', {
         vpc: new Vpc(stack, 'rVpc2'),
         instanceType: new InstanceType(InstanceClass.T3),
-        machineImage: MachineImage.latestAmazonLinux(),
+        machineImage: MachineImage.latestAmazonLinux2(),
         instanceMonitoring: Monitoring.DETAILED,
       });
       validateStack(stack, ruleId, TestType.COMPLIANCE);
@@ -200,7 +212,7 @@ describe('Amazon Elastic Compute Cloud (Amazon EC2)', () => {
       new Instance(stack, 'rInstance3', {
         vpc: new Vpc(stack, 'rVpc'),
         instanceType: new InstanceType(InstanceClass.T3),
-        machineImage: MachineImage.latestAmazonLinux(),
+        machineImage: MachineImage.latestAmazonLinux2(),
       });
       validateStack(stack, ruleId, TestType.COMPLIANCE);
     });
@@ -217,7 +229,7 @@ describe('Amazon Elastic Compute Cloud (Amazon EC2)', () => {
       new Instance(stack, 'rInstance', {
         vpc: new Vpc(stack, 'rVpc'),
         instanceType: InstanceType.of(InstanceClass.C3, InstanceSize.XLARGE),
-        machineImage: MachineImage.latestAmazonLinux(),
+        machineImage: MachineImage.latestAmazonLinux2(),
       }).addToRolePolicy(
         new PolicyStatement({
           actions: ['s3:ListAllMyBuckets'],
@@ -234,7 +246,7 @@ describe('Amazon Elastic Compute Cloud (Amazon EC2)', () => {
       new Instance(stack, 'rInstance', {
         vpc: new Vpc(stack, 'rVpc'),
         instanceType: new InstanceType(InstanceClass.T3),
-        machineImage: MachineImage.latestAmazonLinux(),
+        machineImage: MachineImage.latestAmazonLinux2(),
       });
       validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
     });
@@ -243,7 +255,7 @@ describe('Amazon Elastic Compute Cloud (Amazon EC2)', () => {
       const instance = new Instance(stack, 'rInstance', {
         vpc: new Vpc(stack, 'rVpc'),
         instanceType: new InstanceType(InstanceClass.T3),
-        machineImage: MachineImage.latestAmazonLinux(),
+        machineImage: MachineImage.latestAmazonLinux2(),
       });
       instance.instance.disableApiTermination = true;
       validateStack(stack, ruleId, TestType.COMPLIANCE);
@@ -266,7 +278,7 @@ describe('Amazon Elastic Compute Cloud (Amazon EC2)', () => {
       new Instance(stack, 'rInstance', {
         vpc: new Vpc(stack, 'rVpc'),
         instanceType: new InstanceType(InstanceClass.T3),
-        machineImage: MachineImage.latestAmazonLinux(),
+        machineImage: MachineImage.latestAmazonLinux2(),
       });
       validateStack(stack, ruleId, TestType.COMPLIANCE);
     });
@@ -513,24 +525,639 @@ describe('Amazon Elastic Compute Cloud (Amazon EC2)', () => {
       validateStack(stack, ruleId, TestType.COMPLIANCE);
     });
   });
+  describe('EC2IMDSv2Enabled: EC2 Instances require IMDSv2', () => {
+    const ruleId = 'EC2IMDSv2Enabled';
+    describe('EC2', () => {
+      test('Noncompliance 1', () => {
+        const launchTemplate = new CfnLaunchTemplate(stack, 'LaunchTemplate', {
+          launchTemplateData: {
+            instanceType: 't3.small',
+            metadataOptions: {
+              httpTokens: 'optional',
+            },
+          },
+        });
+
+        new CfnInstance(stack, 'Instance', {
+          imageId: 'ami-00112233444',
+          instanceType: 't3.micro',
+          subnetId: 'subnet-0123455667',
+          launchTemplate: {
+            version: launchTemplate.attrLatestVersionNumber,
+            launchTemplateId: launchTemplate.ref,
+          },
+        });
+        validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+      });
+      test('Noncompliance 2', () => {
+        const launchTemplate = new CfnLaunchTemplate(stack, 'LaunchTemplate', {
+          launchTemplateData: {
+            instanceType: 't3.small',
+          },
+        });
+        new CfnInstance(stack, 'Instance', {
+          imageId: 'ami-00112233444',
+          instanceType: 't3.micro',
+          subnetId: 'subnet-0123455667',
+          launchTemplate: {
+            version: launchTemplate.attrLatestVersionNumber,
+            launchTemplateId: launchTemplate.ref,
+          },
+        });
+        validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+      });
+      test('Noncompliance 3', () => {
+        const vpc = new Vpc(stack, 'Vpc', {});
+        new Instance(stack, 'Instance', {
+          vpc: vpc,
+          instanceType: InstanceType.of(InstanceClass.R5, InstanceSize.LARGE),
+          machineImage: MachineImage.latestAmazonLinux2(),
+          requireImdsv2: false,
+        });
+        validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+      });
+
+      test('Compliance', () => {
+        const vpc = new Vpc(stack, 'Vpc', {});
+        new Instance(stack, 'Instance', {
+          vpc: vpc,
+          instanceType: InstanceType.of(InstanceClass.R5, InstanceSize.LARGE),
+          machineImage: MachineImage.latestAmazonLinux2(),
+          requireImdsv2: true,
+        });
+        const launchTemplate = new CfnLaunchTemplate(stack, 'LaunchTemplate', {
+          launchTemplateData: {
+            instanceType: 't3.small',
+            metadataOptions: {
+              httpTokens: 'required',
+            },
+          },
+        });
+        new CfnInstance(stack, 'Instance2', {
+          imageId: 'ami-00112233444',
+          instanceType: 't3.micro',
+          subnetId: 'subnet-0123455667',
+          launchTemplate: {
+            version: launchTemplate.attrLatestVersionNumber,
+            launchTemplateId: launchTemplate.ref,
+          },
+        });
+        validateStack(stack, ruleId, TestType.COMPLIANCE);
+      });
+    });
+    describe('Autoscaling Groups', () => {
+      test('Noncompliance 1', () => {
+        const launchTemplate = new CfnLaunchTemplate(stack, 'LaunchTemplate', {
+          launchTemplateData: {
+            instanceType: 't3.small',
+          },
+        });
+        new CfnAutoScalingGroup(stack, 'ASG', {
+          maxSize: '2',
+          minSize: '1',
+          launchTemplate: {
+            version: launchTemplate.attrLatestVersionNumber,
+            launchTemplateId: launchTemplate.ref,
+          },
+        });
+        validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+      });
+      test('Noncompliance 2', () => {
+        const launchTemplate = new CfnLaunchTemplate(stack, 'LaunchTemplate', {
+          launchTemplateData: {
+            instanceType: 't3.small',
+            metadataOptions: {
+              httpTokens: 'optional',
+            },
+          },
+        });
+
+        new CfnAutoScalingGroup(stack, 'ASG', {
+          maxSize: '2',
+          minSize: '1',
+          launchTemplate: {
+            version: launchTemplate.attrLatestVersionNumber,
+            launchTemplateName: launchTemplate.launchTemplateName,
+          },
+        });
+        validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+      });
+
+      test('Noncompliance 3', () => {
+        const launchConfig = new CfnLaunchConfiguration(stack, 'LaunchConfig', {
+          imageId: 'ami-123456',
+          instanceType: 't3.small',
+          launchConfigurationName: 'foobar',
+        });
+
+        new CfnAutoScalingGroup(stack, 'ASG', {
+          maxSize: '2',
+          minSize: '1',
+          launchConfigurationName: launchConfig.launchConfigurationName,
+        });
+        validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+      });
+
+      test('Noncompliance 4', () => {
+        const launchConfig = new CfnLaunchConfiguration(
+          stack,
+          'LaunchTemplate',
+          {
+            imageId: 'ami-123456',
+            instanceType: 't3.small',
+            metadataOptions: {
+              httpTokens: 'optional',
+            },
+            launchConfigurationName: 'foobar',
+          }
+        );
+
+        new CfnAutoScalingGroup(stack, 'ASG', {
+          maxSize: '2',
+          minSize: '1',
+          launchConfigurationName: launchConfig.launchConfigurationName,
+        });
+        validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+      });
+
+      test('Noncompliance 5', () => {
+        const launchConfig = new CfnLaunchConfiguration(
+          stack,
+          'LaunchTemplate',
+          {
+            imageId: 'ami-123456',
+            instanceType: 't3.small',
+            launchConfigurationName: 'foobar',
+          }
+        );
+
+        new CfnAutoScalingGroup(stack, 'ASG', {
+          maxSize: '2',
+          minSize: '1',
+          launchConfigurationName: launchConfig.launchConfigurationName,
+        });
+        validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+      });
+      test('Noncompliance 6', () => {
+        const launchConfig = new CfnLaunchConfiguration(
+          stack,
+          'LaunchTemplate',
+          {
+            imageId: 'ami-123456',
+            instanceType: 't3.small',
+          }
+        );
+
+        new CfnAutoScalingGroup(stack, 'ASG', {
+          maxSize: '2',
+          minSize: '1',
+          launchConfigurationName: launchConfig.ref,
+        });
+        validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+      });
+      test('Compliance', () => {
+        const launchTemplate = new CfnLaunchTemplate(stack, 'LaunchTemplate', {
+          launchTemplateData: {
+            instanceType: 't3.small',
+            metadataOptions: {
+              httpTokens: 'required',
+            },
+          },
+        });
+        new CfnAutoScalingGroup(stack, 'ASG1', {
+          maxSize: '2',
+          minSize: '1',
+          launchTemplate: {
+            version: launchTemplate.attrLatestVersionNumber,
+            launchTemplateId: launchTemplate.ref,
+          },
+        });
+        const launchConfig = new CfnLaunchConfiguration(stack, 'LaunchConfig', {
+          imageId: 'ami-123456',
+          instanceType: 't3.small',
+          metadataOptions: {
+            httpTokens: 'required',
+          },
+          launchConfigurationName: 'foobar',
+        });
+
+        new CfnAutoScalingGroup(stack, 'ASG2', {
+          maxSize: '2',
+          minSize: '1',
+          launchConfigurationName: launchConfig.launchConfigurationName,
+        });
+        const launchConfig2 = new CfnLaunchConfiguration(
+          stack,
+          'LaunchConfig2',
+          {
+            imageId: 'ami-123456',
+            instanceType: 't3.small',
+            metadataOptions: {
+              httpTokens: 'required',
+            },
+          }
+        );
+        new CfnAutoScalingGroup(stack, 'ASG3', {
+          maxSize: '2',
+          minSize: '1',
+          launchConfigurationName: launchConfig2.ref,
+        });
+        const launchConfig3 = new CfnLaunchConfiguration(
+          stack,
+          'LaunchConfig3',
+          {
+            imageId: 'ami-123456',
+            instanceType: 't3.small',
+            metadataOptions: {
+              httpTokens: 'required',
+            },
+            launchConfigurationName: 'foobarbaz',
+          }
+        );
+        new CfnAutoScalingGroup(stack, 'ASG4', {
+          maxSize: '2',
+          minSize: '1',
+          launchConfigurationName: launchConfig3.ref,
+        });
+        validateStack(stack, ruleId, TestType.COMPLIANCE);
+      });
+    });
+  });
 });
 
 describe('Amazon Elastic Block Store (EBS)', () => {
   describe('EC2EBSVolumeEncrypted: EBS volumes have encryption enabled', () => {
     const ruleId = 'EC2EBSVolumeEncrypted';
-    test('Noncompliance 1', () => {
-      new Volume(stack, 'rVolume', {
+    test('Noncompliance 1 - Volume', () => {
+      new Volume(stack, 'Volume', {
         availabilityZone: stack.availabilityZones[0],
         size: Size.gibibytes(42),
         encrypted: false,
       });
       validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
     });
-    test('Compliance', () => {
-      new Volume(stack, 'rVolume', {
+    test('Noncompliance 2 - CfnVolume', () => {
+      new CfnVolume(stack, 'Volume', {
+        availabilityZone: stack.availabilityZones[0],
+        encrypted: false,
+      });
+      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+    });
+    test('Noncompliance 3 - LaunchTemplate used by instance', () => {
+      const launchTemplate = new LaunchTemplate(stack, 'LaunchTemplate', {
+        blockDevices: [
+          {
+            deviceName: 'device',
+            volume: BlockDeviceVolume.ebs(1, { encrypted: false }),
+          },
+        ],
+      });
+      const instance = new Instance(stack, 'Instance', {
+        vpc: new Vpc(stack, 'Vpc'),
+        instanceType: new InstanceType(InstanceClass.T3),
+        machineImage: MachineImage.latestAmazonLinux2(),
+      });
+      instance.instance.launchTemplate = {
+        version: launchTemplate.versionNumber,
+        launchTemplateId: launchTemplate.launchTemplateId,
+      };
+      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+    });
+    test('Noncompliance 4 - LaunchTemplate used by instance (blockDevices is not configured)', () => {
+      const launchTemplate = new LaunchTemplate(stack, 'LaunchTemplate', {});
+      const instance = new Instance(stack, 'Instance', {
+        vpc: new Vpc(stack, 'Vpc'),
+        instanceType: new InstanceType(InstanceClass.T3),
+        machineImage: MachineImage.latestAmazonLinux2(),
+      });
+      instance.instance.launchTemplate = {
+        version: launchTemplate.versionNumber,
+        launchTemplateId: launchTemplate.launchTemplateId,
+      };
+      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+    });
+    test('Noncompliance 5 - LaunchTemplate used by instance (blockDevices is an empty array)', () => {
+      const launchTemplate = new LaunchTemplate(stack, 'LaunchTemplate', {
+        blockDevices: [],
+      });
+      const instance = new Instance(stack, 'Instance', {
+        vpc: new Vpc(stack, 'Vpc'),
+        instanceType: new InstanceType(InstanceClass.T3),
+        machineImage: MachineImage.latestAmazonLinux2(),
+        blockDevices: [],
+      });
+      instance.instance.launchTemplate = {
+        version: launchTemplate.versionNumber,
+        launchTemplateId: launchTemplate.launchTemplateId,
+      };
+      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+    });
+    test('Noncompliance 6 - CfnLaunchTemplate used by instance', () => {
+      const launchTemplate = new CfnLaunchTemplate(stack, 'LaunchTemplate', {
+        launchTemplateData: {
+          blockDeviceMappings: [{ ebs: { encrypted: false } }],
+        },
+      });
+      const instance = new Instance(stack, 'Instance', {
+        vpc: new Vpc(stack, 'Vpc'),
+        instanceType: new InstanceType(InstanceClass.T3),
+        machineImage: MachineImage.latestAmazonLinux2(),
+      });
+      instance.instance.launchTemplate = {
+        version: launchTemplate.getAtt('LatestVersionNumber').toString(),
+        launchTemplateName: launchTemplate.launchTemplateName,
+      };
+      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+    });
+    test('Noncompliance 7 - CfnLaunchTemplate used by instance (blockDeviceMappings is not configured)', () => {
+      const launchTemplate = new CfnLaunchTemplate(stack, 'LaunchTemplate', {
+        launchTemplateData: {},
+      });
+      const instance = new Instance(stack, 'Instance', {
+        vpc: new Vpc(stack, 'Vpc'),
+        instanceType: new InstanceType(InstanceClass.T3),
+        machineImage: MachineImage.latestAmazonLinux2(),
+      });
+      instance.instance.launchTemplate = {
+        version: launchTemplate.getAtt('LatestVersionNumber').toString(),
+        launchTemplateName: launchTemplate.launchTemplateName,
+      };
+      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+    });
+    test('Noncompliance 8 - LaunchTemplate used by AutoScalingGroup', () => {
+      const launchTemplate = new LaunchTemplate(stack, 'LaunchTemplate', {
+        blockDevices: [
+          {
+            deviceName: 'device',
+            volume: BlockDeviceVolume.ebs(1, { encrypted: false }),
+          },
+        ],
+        instanceType: new InstanceType(InstanceClass.T3),
+        machineImage: MachineImage.latestAmazonLinux2(),
+      });
+      new AutoScalingGroup(stack, 'Asg', {
+        vpc: new Vpc(stack, 'Vpc'),
+        launchTemplate: launchTemplate,
+      });
+      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+    });
+    test('Noncompliance 9 - CfnLaunchTemplate used by CfnAutoScalingGroup', () => {
+      const launchTemplate = new CfnLaunchTemplate(stack, 'LaunchTemplate', {
+        launchTemplateData: {},
+      });
+      new CfnAutoScalingGroup(stack, 'Asg', {
+        launchTemplate: {
+          version: launchTemplate.getAtt('LatestVersionNumber').toString(),
+          launchTemplateName: launchTemplate.launchTemplateName,
+        },
+        minSize: '1',
+        maxSize: '1',
+      });
+      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+    });
+    test('Noncompliance 10 - Instance', () => {
+      new Instance(stack, 'Instance', {
+        vpc: new Vpc(stack, 'Vpc', {}),
+        instanceType: new InstanceType(InstanceClass.T3),
+        machineImage: MachineImage.latestAmazonLinux2(),
+        blockDevices: [
+          {
+            deviceName: 'device',
+            volume: BlockDeviceVolume.ebs(1, { encrypted: false }),
+          },
+        ],
+      });
+      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+    });
+    test('Noncompliance 11 - Instance (blockDevices is not configured)', () => {
+      new Instance(stack, 'Instance', {
+        vpc: new Vpc(stack, 'Vpc', {}),
+        instanceType: new InstanceType(InstanceClass.T3),
+        machineImage: MachineImage.latestAmazonLinux2(),
+      });
+      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+    });
+    test('Noncompliance 12 - Instance (overwriting LaunchTemplate configuration)', () => {
+      const launchTemplate = new CfnLaunchTemplate(stack, 'LaunchTemplate', {
+        launchTemplateData: {
+          blockDeviceMappings: [{ ebs: { encrypted: true } }],
+        },
+      });
+      const instance = new Instance(stack, 'Instance', {
+        vpc: new Vpc(stack, 'Vpc', {}),
+        instanceType: new InstanceType(InstanceClass.T3),
+        machineImage: MachineImage.latestAmazonLinux2(),
+        blockDevices: [
+          {
+            deviceName: 'device',
+            volume: BlockDeviceVolume.ebs(1, { encrypted: false }),
+          },
+        ],
+      });
+      instance.instance.launchTemplate = {
+        version: launchTemplate.getAtt('LatestVersionNumber').toString(),
+        launchTemplateName: launchTemplate.launchTemplateName,
+      };
+      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+    });
+    test('Noncompliance 13 - Instance (using LaunchTemplate which configures unencrypted volume)', () => {
+      const launchTemplate = new LaunchTemplate(stack, 'LaunchTemplate', {
+        blockDevices: [
+          {
+            deviceName: 'device',
+            volume: BlockDeviceVolume.ebs(1, { encrypted: false }),
+          },
+        ],
+      });
+      const instance = new Instance(stack, 'Instance', {
+        vpc: new Vpc(stack, 'Vpc', {}),
+        instanceType: new InstanceType(InstanceClass.T3),
+        machineImage: MachineImage.latestAmazonLinux2(),
+        blockDevices: [
+          {
+            deviceName: 'device',
+            volume: BlockDeviceVolume.ebs(1, { encrypted: true }),
+          },
+        ],
+      });
+      instance.instance.launchTemplate = {
+        version: launchTemplate.versionNumber,
+        launchTemplateId: launchTemplate.launchTemplateId,
+      };
+      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+    });
+    test('Noncompliance 14 - CfnInstance', () => {
+      new CfnInstance(stack, 'Instance', {
+        blockDeviceMappings: [
+          { deviceName: 'device', ebs: { encrypted: false } },
+        ],
+      });
+      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+    });
+    test('Noncompliance 15 - CfnInstance (blockDeviceMappings is not configured)', () => {
+      new CfnInstance(stack, 'Instance', {});
+      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+    });
+    test('Noncompliance 16 - AutoScalingGroup', () => {
+      new AutoScalingGroup(stack, 'Asg', {
+        vpc: new Vpc(stack, 'Vpc'),
+        instanceType: new InstanceType(InstanceClass.T3),
+        machineImage: MachineImage.latestAmazonLinux2(),
+        blockDevices: [
+          {
+            deviceName: 'device',
+            volume: ASBlockDeviceVolume.ebs(1, { encrypted: false }),
+          },
+        ],
+      });
+      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+    });
+    test('Noncompliance 17 - AutoScalingGroup (blockDevices is not configured)', () => {
+      new AutoScalingGroup(stack, 'Asg', {
+        vpc: new Vpc(stack, 'Vpc'),
+        instanceType: new InstanceType(InstanceClass.T3),
+        machineImage: MachineImage.latestAmazonLinux2(),
+      });
+      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+    });
+    test('Noncompliance 18 - CfnLaunchConfiguration', () => {
+      new CfnLaunchConfiguration(stack, 'LaunchConfig', {
+        imageId: 'ami-123456',
+        instanceType: 't3.small',
+        blockDeviceMappings: [
+          { deviceName: 'device', ebs: { encrypted: false } },
+        ],
+      });
+      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+    });
+    test('Noncompliance 19 - CfnLaunchConfiguration (blockDeviceMappings is not configured)', () => {
+      new CfnLaunchConfiguration(stack, 'LaunchConfig', {
+        imageId: 'ami-123456',
+        instanceType: 't3.small',
+      });
+      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+    });
+    test('Compliance 1 - Volume', () => {
+      new Volume(stack, 'Volume1', {
         availabilityZone: stack.availabilityZones[0],
         size: Size.gibibytes(42),
         encrypted: true,
+      });
+      new CfnVolume(stack, 'Volume2', {
+        availabilityZone: stack.availabilityZones[0],
+        encrypted: true,
+      });
+      validateStack(stack, ruleId, TestType.COMPLIANCE);
+    });
+    test('Compliance 2 - LaunchTemplate configuring an encrypted volume', () => {
+      const vpc = new Vpc(stack, 'Vpc');
+      const launchTemplate1 = new LaunchTemplate(stack, 'LaunchTemplate1', {
+        blockDevices: [
+          {
+            deviceName: 'device',
+            volume: BlockDeviceVolume.ebs(1, { encrypted: true }),
+          },
+        ],
+        instanceType: new InstanceType(InstanceClass.T3),
+        machineImage: MachineImage.latestAmazonLinux2(),
+      });
+      const instance1 = new Instance(stack, 'Instance1', {
+        vpc: vpc,
+        instanceType: new InstanceType(InstanceClass.T3),
+        machineImage: MachineImage.latestAmazonLinux2(),
+      });
+      instance1.instance.launchTemplate = {
+        version: launchTemplate1.versionNumber,
+        launchTemplateId: launchTemplate1.launchTemplateId,
+      };
+      new AutoScalingGroup(stack, 'Asg1', {
+        vpc: vpc,
+        launchTemplate: launchTemplate1,
+      });
+      const launchTemplate2 = new CfnLaunchTemplate(stack, 'LaunchTemplate2', {
+        launchTemplateData: {
+          blockDeviceMappings: [{ ebs: { encrypted: true } }],
+        },
+      });
+      const instance2 = new Instance(stack, 'Instance2', {
+        vpc: vpc,
+        instanceType: new InstanceType(InstanceClass.T3),
+        machineImage: MachineImage.latestAmazonLinux2(),
+      });
+      instance2.instance.launchTemplate = {
+        version: launchTemplate2.getAtt('LatestVersionNumber').toString(),
+        launchTemplateName: launchTemplate2.launchTemplateName,
+      };
+      new CfnAutoScalingGroup(stack, 'Asg2', {
+        launchTemplate: {
+          version: launchTemplate2.getAtt('LatestVersionNumber').toString(),
+          launchTemplateName: launchTemplate2.launchTemplateName,
+        },
+        minSize: '1',
+        maxSize: '1',
+      });
+      validateStack(stack, ruleId, TestType.COMPLIANCE);
+    });
+    test('Compliance 3 - LaunchTemplate not in use', () => {
+      new LaunchTemplate(stack, 'LaunchTemplate1', {});
+      new CfnLaunchTemplate(stack, 'LaunchTemplate2', {
+        launchTemplateData: {},
+      });
+      validateStack(stack, ruleId, TestType.COMPLIANCE);
+    });
+    test('Compliance 4 - Instance', () => {
+      const vpc = new Vpc(stack, 'Vpc');
+      new Instance(stack, 'Instance1', {
+        vpc: vpc,
+        instanceType: new InstanceType(InstanceClass.T3),
+        machineImage: MachineImage.latestAmazonLinux2(),
+        blockDevices: [
+          {
+            deviceName: 'device',
+            volume: BlockDeviceVolume.ebs(1, { encrypted: true }),
+          },
+        ],
+      });
+      new Instance(stack, 'Instance2', {
+        vpc: vpc,
+        instanceType: new InstanceType(InstanceClass.T3),
+        machineImage: MachineImage.latestAmazonLinux2(),
+        blockDevices: [
+          {
+            deviceName: 'device',
+            volume: BlockDeviceVolume.ebs(1, { encrypted: true }),
+          },
+        ],
+        requireImdsv2: true,
+      });
+      validateStack(stack, ruleId, TestType.COMPLIANCE);
+    });
+    test('Compliance 5 - CfnInstance', () => {
+      new CfnInstance(stack, 'Instance', {
+        blockDeviceMappings: [
+          { deviceName: 'device', ebs: { encrypted: true } },
+        ],
+      });
+      validateStack(stack, ruleId, TestType.COMPLIANCE);
+    });
+    test('Compliance 6 - LaunchConfiguration', () => {
+      new AutoScalingGroup(stack, 'Asg', {
+        vpc: new Vpc(stack, 'Vpc'),
+        instanceType: new InstanceType(InstanceClass.T3),
+        machineImage: MachineImage.latestAmazonLinux2(),
+        blockDevices: [
+          {
+            deviceName: 'device',
+            volume: ASBlockDeviceVolume.ebs(1, { encrypted: true }),
+          },
+        ],
+      });
+      new CfnLaunchConfiguration(stack, 'LaunchConfig', {
+        imageId: 'ami-123456',
+        instanceType: 't3.small',
+        blockDeviceMappings: [
+          { deviceName: 'device', ebs: { encrypted: true } },
+        ],
       });
       validateStack(stack, ruleId, TestType.COMPLIANCE);
     });

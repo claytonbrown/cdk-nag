@@ -3,17 +3,19 @@ Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
 import {
-  CfnStage,
-  MethodLoggingLevel,
-  RestApi,
-  CfnClientCertificate,
   AuthorizationType,
+  CfnClientCertificate,
   CfnRequestValidator,
   CfnRestApi,
+  CfnStage,
+  Cors,
+  MethodLoggingLevel,
+  RestApi,
 } from 'aws-cdk-lib/aws-apigateway';
-import { CfnStage as CfnV2Stage, CfnRoute } from 'aws-cdk-lib/aws-apigatewayv2';
+import { CfnRoute, CfnStage as CfnV2Stage } from 'aws-cdk-lib/aws-apigatewayv2';
 import { CfnWebACLAssociation } from 'aws-cdk-lib/aws-wafv2';
 import { Aspects, Stack } from 'aws-cdk-lib/core';
+import { TestPack, TestType, validateStack } from './utils';
 import {
   APIGWAccessLogging,
   APIGWAssociatedWithWAF,
@@ -24,7 +26,6 @@ import {
   APIGWSSLEnabled,
   APIGWXrayEnabled,
 } from '../../src/rules/apigw';
-import { TestPack, TestType, validateStack } from './utils';
 
 const testPack = new TestPack([
   APIGWAccessLogging,
@@ -182,26 +183,39 @@ describe('Amazon API Gateway', () => {
   describe('APIGWAuthorization: APIs implement authorization', () => {
     const ruleId = 'APIGWAuthorization';
     test('Noncompliance 1', () => {
-      new RestApi(stack, 'rRestApi').root.addMethod('ANY');
+      new RestApi(stack, 'RestApi').root.addMethod('ANY');
       validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
     });
     test('Noncompliance 2', () => {
-      new CfnRoute(stack, 'rRoute', {
+      new CfnRoute(stack, 'Route', {
         apiId: 'foo',
         routeKey: 'ANY /bar',
         authorizationType: 'NONE',
       });
       validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
     });
-    test('Compliance', () => {
-      new RestApi(stack, 'rRestApi', {
+    test('Noncompliance 3', () => {
+      new RestApi(stack, 'RestApi').root.addMethod('OPTIONS');
+      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
+    });
+    test('Compliance 1', () => {
+      new RestApi(stack, 'RestApi', {
         defaultMethodOptions: { authorizationType: AuthorizationType.CUSTOM },
       }).root.addMethod('ANY');
-      new CfnRoute(stack, 'rRoute', {
+      new CfnRoute(stack, 'Route', {
         apiId: 'foo',
         routeKey: 'ANY /bar',
         authorizationType: 'CUSTOM',
         authorizerId: 'baz',
+      });
+      validateStack(stack, ruleId, TestType.COMPLIANCE);
+    });
+    test('Compliance 2', () => {
+      new RestApi(stack, 'RestApi').root.addCorsPreflight({
+        allowOrigins: Cors.ALL_ORIGINS,
+        allowHeaders: Cors.DEFAULT_HEADERS,
+        allowMethods: Cors.ALL_METHODS,
+        allowCredentials: true,
       });
       validateStack(stack, ruleId, TestType.COMPLIANCE);
     });
@@ -256,24 +270,31 @@ describe('Amazon API Gateway', () => {
   describe('APIGWRequestValidation: Rest APIs have request validation enabled', () => {
     const ruleId = 'APIGWRequestValidation';
     test('Noncompliance 1', () => {
-      new RestApi(stack, 'rRestApi').root.addMethod('ANY');
+      new RestApi(stack, 'RestApi').root.addMethod('ANY');
       validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
     });
     test('Noncompliance 2', () => {
-      new RestApi(stack, 'rRestApi').root.addMethod('ANY');
-      new CfnRequestValidator(stack, 'rRequestVAlidator', {
+      new RestApi(stack, 'RestApi').root.addMethod('ANY');
+      new CfnRequestValidator(stack, 'RequestVAlidator', {
         restApiId: 'foo',
+        validateRequestBody: true,
+        validateRequestParameters: false,
       });
       validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
     });
     test('Compliance', () => {
-      const compliantRestApi = new RestApi(stack, 'rRestApi');
-      compliantRestApi.addRequestValidator('rRequestValidator', {});
+      const compliantRestApi = new RestApi(stack, 'RestApi');
+      compliantRestApi.addRequestValidator('RequestValidator', {
+        validateRequestBody: true,
+        validateRequestParameters: true,
+      });
       compliantRestApi.root.addMethod('ANY');
-      const compliantRestApi2 = new RestApi(stack, 'rRestApi2');
+      const compliantRestApi2 = new RestApi(stack, 'RestApi2');
       compliantRestApi2.root.addMethod('ANY');
-      new CfnRequestValidator(stack, 'rRequestValidator2', {
+      new CfnRequestValidator(stack, 'RequestValidator2', {
         restApiId: compliantRestApi2.restApiId,
+        validateRequestBody: true,
+        validateRequestParameters: true,
       });
       validateStack(stack, ruleId, TestType.COMPLIANCE);
     });

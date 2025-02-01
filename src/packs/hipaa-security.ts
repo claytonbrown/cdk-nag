@@ -5,7 +5,8 @@ SPDX-License-Identifier: Apache-2.0
 
 import { CfnResource } from 'aws-cdk-lib';
 import { IConstruct } from 'constructs';
-import { NagPack, NagMessageLevel, NagPackProps } from '../nag-pack';
+import { NagPack, NagPackProps } from '../nag-pack';
+import { NagMessageLevel } from '../nag-rules';
 import {
   APIGWCacheEnabledAndEncrypted,
   APIGWExecutionLoggingEnabled,
@@ -39,6 +40,7 @@ import {
 import {
   EC2EBSInBackupPlan,
   EC2EBSOptimizedInstance,
+  EC2IMDSv2Enabled,
   EC2InstanceDetailedMonitoringEnabled,
   EC2InstanceNoPublicIp,
   EC2InstanceProfileAttached,
@@ -72,7 +74,12 @@ import {
   IAMUserGroupMembership,
   IAMUserNoPolicies,
 } from '../rules/iam';
-import { LambdaConcurrency, LambdaDLQ, LambdaInsideVPC } from '../rules/lambda';
+import {
+  LambdaConcurrency,
+  LambdaDLQ,
+  LambdaFunctionPublicAccessProhibited,
+  LambdaInsideVPC,
+} from '../rules/lambda';
 import {
   OpenSearchEncryptedAtRest,
   OpenSearchErrorLogsToCloudWatch,
@@ -85,9 +92,9 @@ import {
   RDSInBackupPlan,
   RDSInstanceBackupEnabled,
   RDSInstanceDeletionProtectionEnabled,
-  RDSMultiAZSupport,
   RDSInstancePublicAccess,
   RDSLoggingEnabled,
+  RDSMultiAZSupport,
   RDSStorageEncrypted,
 } from '../rules/rds';
 import {
@@ -104,7 +111,6 @@ import {
   S3BucketPublicReadProhibited,
   S3BucketPublicWriteProhibited,
   S3BucketReplicationEnabled,
-  S3BucketServerSideEncryptionEnabled,
   S3BucketSSLRequestsOnly,
   S3BucketVersioningEnabled,
   S3DefaultEncryptionKMS,
@@ -390,7 +396,15 @@ export class HIPAASecurityChecks extends NagPack {
       node: node,
     });
     this.applyRule({
-      info: 'The EC2 instance does not have detailed monitoring enabled - (Control IDs: 164.312(b)).',
+      info: 'The EC2 instance does not have IMDSV2 (Instance Metadata Service Version 2) enabled - (Control IDs: 164.308(a)(3)(i), 164.308(a)(4)(ii)(A), 164.308(a)(4)(ii)(C), 164.312(a)(1)).',
+      explanation:
+        'Instance Metadata Service Version 2 (IMDSv2) helps protect access and control of Amazon Elastic Compute Cloud (Amazon EC2) instance metadata. The IMDSv2 method uses session-based controls. With IMDSv2, controls can be implemented to restrict changes to instance metadata.',
+      level: NagMessageLevel.ERROR,
+      rule: EC2IMDSv2Enabled,
+      node: node,
+    });
+    this.applyRule({
+      info: 'The EC2 instance does not have detailed monitoring enabled - (Control ID: 164.312(b)).',
       explanation:
         'Detailed monitoring provides additional monitoring information (such as 1-minute period graphs) on the AWS console.',
       level: NagMessageLevel.ERROR,
@@ -686,6 +700,14 @@ export class HIPAASecurityChecks extends NagPack {
       node: node,
     });
     this.applyRule({
+      info: 'The Lambda function permission grants public access - (Control IDs: 164.308(a)(3)(i), 164.308(a)(4)(ii)(A), 164.308(a)(4)(ii)(C), 164.312(a)(1), 164.312(e)(1)).',
+      explanation:
+        'Public access allows anyone on the internet to perform unauthenticated actions on your function and can potentially lead to degraded availability.',
+      level: NagMessageLevel.ERROR,
+      rule: LambdaFunctionPublicAccessProhibited,
+      node: node,
+    });
+    this.applyRule({
       info: 'The Lambda function is not VPC enabled - (Control IDs: 164.308(a)(3)(i), 164.308(a)(4)(ii)(A), 164.308(a)(4)(ii)(C), 164.312(a)(1), 164.312(e)(1)).',
       explanation:
         'Because of their logical isolation, domains that reside within an Amazon VPC have an extra layer of security when compared to domains that use public endpoints.',
@@ -916,14 +938,6 @@ export class HIPAASecurityChecks extends NagPack {
         'Amazon Simple Storage Service (Amazon S3) Cross-Region Replication (CRR) supports maintaining adequate capacity and availability. CRR enables automatic, asynchronous copying of objects across Amazon S3 buckets to help ensure that data availability is maintained.',
       level: NagMessageLevel.ERROR,
       rule: S3BucketReplicationEnabled,
-      node: node,
-    });
-    this.applyRule({
-      info: 'The S3 Bucket does not have default server-side encryption enabled - (Control IDs: 164.312(a)(2)(iv), 164.312(c)(2), 164.312(e)(2)(ii)).',
-      explanation:
-        'Because sensitive data can exist at rest in Amazon S3 buckets, enable encryption to help protect that data.',
-      level: NagMessageLevel.ERROR,
-      rule: S3BucketServerSideEncryptionEnabled,
       node: node,
     });
     this.applyRule({

@@ -2,11 +2,11 @@
 Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 SPDX-License-Identifier: Apache-2.0
 */
-const { awscdk } = require('projen');
+const { awscdk, vscode } = require('projen');
 const project = new awscdk.AwsCdkConstructLibrary({
   author: 'Arun Donti',
   authorAddress: 'donti@amazon.com',
-  cdkVersion: '2.21.0',
+  cdkVersion: '2.156.0',
   defaultReleaseBranch: 'main',
   majorVersion: 2,
   npmDistTag: 'latest',
@@ -36,7 +36,7 @@ const project = new awscdk.AwsCdkConstructLibrary({
   },
   projenUpgradeSecret: 'PROJEN_GITHUB_TOKEN',
   autoApproveOptions: {
-    allowedUsernames: ['cdklabs-automation'],
+    allowedUsernames: ['cdklabs-automation', 'dontirun'],
     secret: 'GITHUB_TOKEN',
   },
   autoApproveUpgrades: true,
@@ -45,16 +45,12 @@ const project = new awscdk.AwsCdkConstructLibrary({
     workflowOptions: {
       labels: ['auto-approve'],
       secret: 'PROJEN_GITHUB_TOKEN',
-      container: {
-        image: 'jsii/superchain:1-buster-slim-node14',
-      },
     },
   },
-  workflowContainerImage: 'jsii/superchain:1-buster-slim-node14',
   eslintOptions: { prettier: true },
   buildWorkflow: true,
   release: true,
-  gitignore: ['.vscode'],
+  gitignore: ['.vscode', '**/.DS_Store'],
 });
 project.package.addField('prettier', {
   singleQuote: true,
@@ -66,5 +62,27 @@ project.eslint.addRules({
     'error',
     { singleQuote: true, semi: true, trailingComma: 'es5' },
   ],
+});
+eslint = project.tasks
+  .tryFind('eslint')
+  .prependExec('npx prettier --write RULES.md');
+setup = project.addTask('dev-container-setup', {
+  exec: 'sudo chown superchain . -R',
+});
+def = project.tasks.tryFind('default');
+def.prependExec('python3 -m pip install pre-commit && pre-commit install');
+
+new vscode.DevContainer(project, {
+  features: [
+    { name: 'docker-in-docker' },
+    { name: 'ghcr.io/devcontainers/features/github-cli' },
+  ],
+  tasks: [setup, def],
+  dockerImage: {
+    containerUser: 'superchain',
+    remoteUser: 'superchain',
+    extensions: ['dbaeumer.vscode-eslint'],
+    dockerFile: './Dockerfile',
+  },
 });
 project.synth();

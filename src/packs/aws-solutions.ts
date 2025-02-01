@@ -4,7 +4,8 @@ SPDX-License-Identifier: Apache-2.0
 */
 import { CfnResource } from 'aws-cdk-lib';
 import { IConstruct } from 'constructs';
-import { NagMessageLevel, NagPack, NagPackProps } from '../nag-pack';
+import { NagPack, NagPackProps } from '../nag-pack';
+import { NagMessageLevel } from '../nag-rules';
 import {
   APIGWAccessLogging,
   APIGWAssociatedWithWAF,
@@ -13,7 +14,6 @@ import {
   APIGWRequestValidation,
 } from '../rules/apigw';
 import { AppSyncGraphQLRequestLogging } from '../rules/appsync';
-import { AthenaWorkgroupEncryptedQueryResults } from '../rules/athena';
 import {
   AutoScalingGroupCooldownPeriod,
   AutoScalingGroupHealthCheck,
@@ -25,13 +25,13 @@ import {
   CloudFrontDistributionGeoRestrictions,
   CloudFrontDistributionHttpsViewerNoOutdatedSSL,
   CloudFrontDistributionNoOutdatedSSL,
+  CloudFrontDistributionS3OriginAccessControl,
   CloudFrontDistributionS3OriginAccessIdentity,
   CloudFrontDistributionWAFIntegration,
 } from '../rules/cloudfront';
 import {
   CodeBuildProjectKMSEncryptedArtifacts,
   CodeBuildProjectManagedImages,
-  CodeBuildProjectPrivilegedModeDisabled,
 } from '../rules/codebuild';
 import {
   CognitoUserPoolAdvancedSecurityModeEnforced,
@@ -163,7 +163,6 @@ import {
 import {
   S3BucketLevelPublicAccessProhibited,
   S3BucketLoggingEnabled,
-  S3BucketServerSideEncryptionEnabled,
   S3BucketSSLRequestsOnly,
   S3WebBucketOAIAccess,
 } from '../rules/s3';
@@ -173,7 +172,7 @@ import {
   SageMakerNotebookNoDirectInternetAccess,
 } from '../rules/sagemaker';
 import { SecretsManagerRotationEnabled } from '../rules/secretsmanager';
-import { SNSEncryptedKMS, SNSTopicSSLPublishOnly } from '../rules/sns';
+import { SNSTopicSSLPublishOnly } from '../rules/sns';
 import {
   SQSQueueDLQ,
   SQSQueueSSE,
@@ -223,7 +222,7 @@ export class AwsSolutionsChecks extends NagPack {
       ruleSuffixOverride: 'EB1',
       info: 'The Elastic Beanstalk environment is not configured to use a specific VPC.',
       explanation:
-        'Use a non-default VPC in order to seperate your environment from default resources.',
+        'Use a non-default VPC in order to separate your environment from default resources.',
       level: NagMessageLevel.ERROR,
       rule: ElasticBeanstalkVPCSpecified,
       node: node,
@@ -257,7 +256,7 @@ export class AwsSolutionsChecks extends NagPack {
     });
     this.applyRule({
       ruleSuffixOverride: 'EC26',
-      info: 'The EBS volume has encryption disabled.',
+      info: 'The resource creates one or more EBS volumes that have encryption disabled.',
       explanation:
         "With EBS encryption, you aren't required to build, maintain, and secure your own key management infrastructure. EBS encryption uses KMS keys when creating encrypted volumes and snapshots. This helps protect data at rest.",
       level: NagMessageLevel.ERROR,
@@ -359,7 +358,7 @@ export class AwsSolutionsChecks extends NagPack {
       ruleSuffixOverride: 'ELB2',
       info: 'The ELB does not have access logs enabled.',
       explanation:
-        'Access logs allow operators to to analyze traffic patterns and identify and troubleshoot security issues.',
+        'Access logs allow operators to analyze traffic patterns and identify and troubleshoot security issues.',
       level: NagMessageLevel.ERROR,
       rule: ELBLoggingEnabled,
       node: node,
@@ -415,15 +414,6 @@ export class AwsSolutionsChecks extends NagPack {
         'The bucket should have public access restricted and blocked to prevent unauthorized access.',
       level: NagMessageLevel.ERROR,
       rule: S3BucketLevelPublicAccessProhibited,
-      node: node,
-    });
-    this.applyRule({
-      ruleSuffixOverride: 'S3',
-      info: 'The S3 Bucket does not have default encryption enabled.',
-      explanation:
-        'The bucket should minimally have SSE enabled to help protect data-at-rest.',
-      level: NagMessageLevel.ERROR,
-      rule: S3BucketServerSideEncryptionEnabled,
       node: node,
     });
     this.applyRule({
@@ -734,7 +724,7 @@ export class AwsSolutionsChecks extends NagPack {
       ruleSuffixOverride: 'RS11',
       info: 'The Redshift cluster does not have user activity logging enabled.',
       explanation:
-        'User activity logging logs each query before it is performed on the clusters databse. To enable this feature associate a Resdhsift Cluster Parameter Group with the "enable_user_activity_logging" parameter set to "true".',
+        'User activity logging logs each query before it is performed on the clusters database. To enable this feature associate a Redshift Cluster Parameter Group with the "enable_user_activity_logging" parameter set to "true".',
       level: NagMessageLevel.ERROR,
       rule: RedshiftClusterUserActivityLogging,
       node: node,
@@ -867,11 +857,20 @@ export class AwsSolutionsChecks extends NagPack {
     });
     this.applyRule({
       ruleSuffixOverride: 'CFR6',
-      info: 'The CloudFront distribution does not use an origin access identity with an S3 origin.',
+      info: 'The CloudFront Streaming distribution does not use an origin access identity with an S3 origin.',
       explanation:
         'Origin access identities help with security by restricting any direct access to objects through S3 URLs.',
       level: NagMessageLevel.ERROR,
       rule: CloudFrontDistributionS3OriginAccessIdentity,
+      node: node,
+    });
+    this.applyRule({
+      ruleSuffixOverride: 'CFR7',
+      info: 'The CloudFront distribution does not use an origin access control with an S3 origin.',
+      explanation:
+        'Origin access controls help with security by restricting any direct access to objects through S3 URLs.',
+      level: NagMessageLevel.ERROR,
+      rule: CloudFrontDistributionS3OriginAccessControl,
       node: node,
     });
     this.applyRule({
@@ -1006,15 +1005,6 @@ export class AwsSolutionsChecks extends NagPack {
    * @param ignores list of ignores for the resource
    */
   private checkAnalytics(node: CfnResource): void {
-    this.applyRule({
-      ruleSuffixOverride: 'ATH1',
-      info: 'The Athena workgroup does not encrypt query results.',
-      explanation:
-        'Encrypting query results stored in S3 helps secure data to meet compliance requirements for data-at-rest encryption.',
-      level: NagMessageLevel.ERROR,
-      rule: AthenaWorkgroupEncryptedQueryResults,
-      node: node,
-    });
     this.applyRule({
       ruleSuffixOverride: 'EMR2',
       info: 'The EMR cluster does not have S3 logging enabled.',
@@ -1335,7 +1325,7 @@ export class AwsSolutionsChecks extends NagPack {
       ruleSuffixOverride: 'SF2',
       info: 'The Step Function does not have X-Ray tracing enabled.',
       explanation:
-        'X-ray provides an end-to-end view of how an application is performing. This helps operators to discover performance issues, detect permission problems, and track requests made to and from other AWS services.',
+        'X-Ray provides an end-to-end view of how an application is performing. This helps operators to discover performance issues, detect permission problems, and track requests made to and from other AWS services.',
       level: NagMessageLevel.ERROR,
       rule: StepFunctionStateMachineXray,
       node: node,
@@ -1358,15 +1348,6 @@ export class AwsSolutionsChecks extends NagPack {
       node: node,
     });
     this.applyRule({
-      ruleSuffixOverride: 'SNS2',
-      info: 'The SNS Topic does not have server-side encryption enabled.',
-      explanation:
-        'Server side encryption adds additional protection of sensitive data delivered as messages to subscribers.',
-      level: NagMessageLevel.ERROR,
-      rule: SNSEncryptedKMS,
-      node: node,
-    });
-    this.applyRule({
       ruleSuffixOverride: 'SNS3',
       info: 'The SNS Topic does not require publishers to use SSL.',
       explanation:
@@ -1386,7 +1367,7 @@ export class AwsSolutionsChecks extends NagPack {
     });
     this.applyRule({
       ruleSuffixOverride: 'SQS3',
-      info: 'The SQS queue does not have a dead-letter queue (DLQ) enabled or have a cdk-nag rule suppression indicating it is a DLQ.',
+      info: 'The SQS queue is not used as a dead-letter queue (DLQ) and does not have a DLQ enabled.',
       explanation:
         'Using a DLQ helps maintain the queue flow and avoid losing data by detecting and mitigating failures and service disruptions on time.',
       level: NagMessageLevel.ERROR,
@@ -1473,15 +1454,6 @@ export class AwsSolutionsChecks extends NagPack {
    */
   private checkDeveloperTools(node: CfnResource): void {
     this.applyRule({
-      ruleSuffixOverride: 'CB3',
-      info: 'The CodeBuild project has privileged mode enabled.',
-      explanation:
-        'Privileged grants elevated rights to the system, which introduces additional risk. Privileged mode should only be set to true only if the build project is used to build Docker images. Otherwise, a build that attempts to interact with the Docker daemon fails.',
-      level: NagMessageLevel.WARN,
-      rule: CodeBuildProjectPrivilegedModeDisabled,
-      node: node,
-    });
-    this.applyRule({
       ruleSuffixOverride: 'CB4',
       info: 'The CodeBuild project does not use an AWS KMS key for encryption.',
       explanation:
@@ -1518,7 +1490,7 @@ export class AwsSolutionsChecks extends NagPack {
   private checkLambda(node: CfnResource): void {
     this.applyRule({
       ruleSuffixOverride: 'L1',
-      info: 'The non-container Lambda function is not configured to use the latest runtime version. .',
+      info: 'The non-container Lambda function is not configured to use the latest runtime version.',
       explanation:
         'Use the latest available runtime for the targeted language to avoid technical debt. Runtimes specific to a language or framework version are deprecated when the version reaches end of life. This rule only applies to non-container Lambda functions.',
       level: NagMessageLevel.ERROR,

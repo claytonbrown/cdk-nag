@@ -5,7 +5,8 @@ SPDX-License-Identifier: Apache-2.0
 
 import { CfnResource } from 'aws-cdk-lib';
 import { IConstruct } from 'constructs';
-import { NagPack, NagMessageLevel, NagPackProps } from '../nag-pack';
+import { NagPack, NagPackProps } from '../nag-pack';
+import { NagMessageLevel } from '../nag-rules';
 import {
   APIGWCacheEnabledAndEncrypted,
   APIGWExecutionLoggingEnabled,
@@ -33,9 +34,10 @@ import {
 } from '../rules/dynamodb';
 import {
   EC2EBSInBackupPlan,
+  EC2IMDSv2Enabled,
   EC2InstanceDetailedMonitoringEnabled,
-  EC2InstancesInVPC,
   EC2InstanceNoPublicIp,
+  EC2InstancesInVPC,
   EC2RestrictedCommonPorts,
   EC2RestrictedSSH,
 } from '../rules/ec2';
@@ -60,7 +62,10 @@ import {
   IAMUserNoPolicies,
 } from '../rules/iam';
 import { KMSBackingKeyRotationEnabled } from '../rules/kms';
-import { LambdaInsideVPC } from '../rules/lambda';
+import {
+  LambdaFunctionPublicAccessProhibited,
+  LambdaInsideVPC,
+} from '../rules/lambda';
 import {
   OpenSearchEncryptedAtRest,
   OpenSearchInVPCOnly,
@@ -87,7 +92,6 @@ import {
   S3BucketPublicReadProhibited,
   S3BucketPublicWriteProhibited,
   S3BucketReplicationEnabled,
-  S3BucketServerSideEncryptionEnabled,
   S3BucketSSLRequestsOnly,
   S3BucketVersioningEnabled,
 } from '../rules/s3';
@@ -330,6 +334,14 @@ export class NIST80053R4Checks extends NagPack {
         'To help with data back-up processes, ensure your Amazon Elastic Block Store (Amazon EBS) volumes are a part of an AWS Backup plan. AWS Backup is a fully managed backup service with a policy-based backup solution. This solution simplifies your backup management and enables you to meet your business and regulatory backup compliance requirements.',
       level: NagMessageLevel.ERROR,
       rule: EC2EBSInBackupPlan,
+      node: node,
+    });
+    this.applyRule({
+      info: 'The EC2 instance does not have IMDSV2 (Instance Metadata Service Version 2) enabled - (Control ID: AC-6).',
+      explanation:
+        'Instance Metadata Service Version 2 (IMDSv2) helps protect access and control of Amazon Elastic Compute Cloud (Amazon EC2) instance metadata. The IMDSv2 method uses session-based controls. With IMDSv2, controls can be implemented to restrict changes to instance metadata.',
+      level: NagMessageLevel.ERROR,
+      rule: EC2IMDSv2Enabled,
       node: node,
     });
     this.applyRule({
@@ -582,6 +594,14 @@ export class NIST80053R4Checks extends NagPack {
       rule: LambdaInsideVPC,
       node: node,
     });
+    this.applyRule({
+      info: 'The Lambda function permission grants public access - (Control IDs: AC-3, AC-4, AC-6, AC-21(b), SC-7, SC-7(3)).',
+      explanation:
+        'Public access allows anyone on the internet to perform unauthenticated actions on your function and can potentially lead to degraded availability.',
+      level: NagMessageLevel.ERROR,
+      rule: LambdaFunctionPublicAccessProhibited,
+      node: node,
+    });
   }
 
   /**
@@ -765,14 +785,6 @@ export class NIST80053R4Checks extends NagPack {
         'Amazon Simple Storage Service (Amazon S3) Cross-Region Replication (CRR) supports maintaining adequate capacity and availability. CRR enables automatic, asynchronous copying of objects across Amazon S3 buckets to help ensure that data availability is maintained.',
       level: NagMessageLevel.ERROR,
       rule: S3BucketReplicationEnabled,
-      node: node,
-    });
-    this.applyRule({
-      info: 'The S3 Bucket does not have default server-side encryption enabled - (Control IDs: AU-9(2), CP-9(b), CP-10, SC-5, SC-36).',
-      explanation:
-        'Because sensitive data can exist at rest in Amazon S3 buckets, enable encryption to help protect that data.',
-      level: NagMessageLevel.ERROR,
-      rule: S3BucketServerSideEncryptionEnabled,
       node: node,
     });
     this.applyRule({

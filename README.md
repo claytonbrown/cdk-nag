@@ -83,7 +83,34 @@ export class CdkTestStack extends Stack {
 </details>
 
 <details>
-  <summary>Example 2) Child Constructs</summary>
+  <summary>Example 2) On Multiple Constructs</summary>
+
+```typescript
+import { SecurityGroup, Vpc, Peer, Port } from 'aws-cdk-lib/aws-ec2';
+import { Stack, StackProps } from 'aws-cdk-lib';
+import { Construct } from 'constructs';
+import { NagSuppressions } from 'cdk-nag';
+
+export class CdkTestStack extends Stack {
+  constructor(scope: Construct, id: string, props?: StackProps) {
+    super(scope, id, props);
+    const vpc = new Vpc(this, 'vpc');
+    const test1 = new SecurityGroup(this, 'test', { vpc });
+    test1.addIngressRule(Peer.anyIpv4(), Port.allTraffic());
+    const test2 = new SecurityGroup(this, 'test', { vpc });
+    test2.addIngressRule(Peer.anyIpv4(), Port.allTraffic());
+    NagSuppressions.addResourceSuppressions(
+      [test1, test2],
+      [{ id: 'AwsSolutions-EC23', reason: 'lorem ipsum' }]
+    );
+  }
+}
+```
+
+</details>
+
+<details>
+  <summary>Example 3) Child Constructs</summary>
 
 ```typescript
 import { User, PolicyStatement } from 'aws-cdk-lib/aws-iam';
@@ -120,7 +147,7 @@ export class CdkTestStack extends Stack {
 </details>
 
 <details>
-  <summary>Example 3) Stack Level </summary>
+  <summary>Example 4) Stack Level </summary>
 
 ```typescript
 import { App, Aspects } from 'aws-cdk-lib';
@@ -138,7 +165,7 @@ NagSuppressions.addStackSuppressions(stack, [
 </details>
 
 <details>
-  <summary>Example 4) Construct path</summary>
+  <summary>Example 5) Construct path</summary>
 
 If you received the following error on synth/deploy
 
@@ -172,7 +199,7 @@ export class CdkTestStack extends Stack {
 </details>
 
 <details>
-  <summary>Example 5) Granular Suppressions of findings</summary>
+  <summary>Example 6) Granular Suppressions of findings</summary>
 
 Certain rules support granular suppressions of `findings`. If you received the following errors on synth/deploy
 
@@ -264,6 +291,69 @@ You would see the following error on synth/deploy
 
 </details>
 
+## Suppressing Rule Validation Failures
+
+When a rule validation fails it is handled similarly to a rule violation, and can be suppressed in the same manner. The `ID` for a rule failure is `CdkNagValidationFailure`.
+
+If a rule is suppressed in a non-granular manner (i.e. `appliesTo` is not set, see example 1 above) then validation failures on that rule are also suppressed.
+
+Validation failure suppression respects any applied [Suppression Ignore Conditions](#conditionally-ignoring-suppressions)
+
+<details>
+  <summary>Example 1) Suppress all Validation Failures on a Resource</summary>
+
+```typescript
+import { SecurityGroup, Vpc, Peer, Port } from 'aws-cdk-lib/aws-ec2';
+import { Stack, StackProps } from 'aws-cdk-lib';
+import { Construct } from 'constructs';
+import { NagSuppressions } from 'cdk-nag';
+
+export class CdkTestStack extends Stack {
+  constructor(scope: Construct, id: string, props?: StackProps) {
+    super(scope, id, props);
+    const test = new SecurityGroup(this, 'test', {
+      vpc: new Vpc(this, 'vpc'),
+    });
+    test.addIngressRule(Peer.anyIpv4(), Port.allTraffic());
+    NagSuppressions.addResourceSuppressions(test, [
+      { id: 'CdkNagValidationFailure', reason: 'lorem ipsum' },
+    ]);
+  }
+}
+```
+
+</details>
+
+<details>
+  <summary>Example 2) Granular Suppression of Validation Failures</summary>
+Validation failures can be suppressed for individual rules by using `appliesTo` to list the desired rules
+
+```typescript
+import { SecurityGroup, Vpc, Peer, Port } from 'aws-cdk-lib/aws-ec2';
+import { Stack, StackProps } from 'aws-cdk-lib';
+import { Construct } from 'constructs';
+import { NagSuppressions } from 'cdk-nag';
+
+export class CdkTestStack extends Stack {
+  constructor(scope: Construct, id: string, props?: StackProps) {
+    super(scope, id, props);
+    const test = new SecurityGroup(this, 'test', {
+      vpc: new Vpc(this, 'vpc'),
+    });
+    test.addIngressRule(Peer.anyIpv4(), Port.allTraffic());
+    NagSuppressions.addResourceSuppressions(test, [
+      {
+        id: 'CdkNagValidationFailure',
+        reason: 'lorem ipsum',
+        appliesTo: ['AwsSolutions-L1'],
+      },
+    ]);
+  }
+}
+```
+
+</details>
+
 ## Suppressing `aws-cdk-lib/pipelines` Violations
 
 The [aws-cdk-lib/pipelines.CodePipeline](https://docs.aws.amazon.com/cdk/api/v2/docs/aws-cdk-lib.pipelines.CodePipeline.html) construct and its child constructs are not guaranteed to be "Visited" by `Aspects`, as they are not added during the "Construction" phase of the [cdk lifecycle](https://docs.aws.amazon.com/cdk/v2/guide/apps.html#lifecycle). Because of this behavior, you may experience problems such as rule violations not appearing or the inability to suppress violations on these constructs.
@@ -277,12 +367,12 @@ Error: Suppression path "/this/construct/path" did not match any resource. This 
 See [this issue](https://github.com/aws/aws-cdk/issues/18440) for more information.
 
 <details>
-  <summary>Example) Supressing Violations in Pipelines</summary>
-  
-  `example-app.ts`
-  
-  ```ts
-  import { App, Aspects } from 'aws-cdk-lib';
+  <summary>Example) Suppressing Violations in Pipelines</summary>
+
+`example-app.ts`
+
+```ts
+import { App, Aspects } from 'aws-cdk-lib';
 import { AwsSolutionsChecks } from 'cdk-nag';
 import { ExamplePipeline } from '../lib/example-pipeline';
 
@@ -290,45 +380,55 @@ const app = new App();
 new ExamplePipeline(app, 'example-cdk-pipeline');
 Aspects.of(app).add(new AwsSolutionsChecks({ verbose: true }));
 app.synth();
-
-````
+```
 
 `example-pipeline.ts`
 
 ```ts
 import { Stack, StackProps } from 'aws-cdk-lib';
 import { Repository } from 'aws-cdk-lib/aws-codecommit';
-import { CodePipeline, CodePipelineSource, ShellStep } from 'aws-cdk-lib/pipelines';
+import {
+  CodePipeline,
+  CodePipelineSource,
+  ShellStep,
+} from 'aws-cdk-lib/pipelines';
 import { NagSuppressions } from 'cdk-nag';
 import { Construct } from 'constructs';
 
 export class ExamplePipeline extends Stack {
-constructor(scope: Construct, id: string, props?: StackProps) {
-  super(scope, id, props);
+  constructor(scope: Construct, id: string, props?: StackProps) {
+    super(scope, id, props);
 
-  const exampleSynth = new ShellStep('ExampleSynth', {
-    commands: ['yarn build --frozen-lockfile'],
-    input: CodePipelineSource.codeCommit(new Repository(this, 'ExampleRepo', { repositoryName: 'ExampleRepo' }), 'main'),
-  });
+    const exampleSynth = new ShellStep('ExampleSynth', {
+      commands: ['yarn build --frozen-lockfile'],
+      input: CodePipelineSource.codeCommit(
+        new Repository(this, 'ExampleRepo', { repositoryName: 'ExampleRepo' }),
+        'main'
+      ),
+    });
 
-  const ExamplePipeline = new CodePipeline(this, 'ExamplePipeline', {
-    synth: exampleSynth,
-  });
+    const ExamplePipeline = new CodePipeline(this, 'ExamplePipeline', {
+      synth: exampleSynth,
+    });
 
-  // Force the pipeline construct creation forward before applying suppressions.
-  // @See https://github.com/aws/aws-cdk/issues/18440
-  ExamplePipeline.buildPipeline();
+    // Force the pipeline construct creation forward before applying suppressions.
+    // @See https://github.com/aws/aws-cdk/issues/18440
+    ExamplePipeline.buildPipeline();
 
-  // The path suppression will error if you comment out "ExamplePipeline.buildPipeline();""
-  NagSuppressions.addResourceSuppressionsByPath(this, '/example-cdk-pipeline/ExamplePipeline/Pipeline/ArtifactsBucket/Resource', [
-    {
-      id: 'AwsSolutions-S1',
-      reason: 'Because I said so',
-    },
-  ]);
+    // The path suppression will error if you comment out "ExamplePipeline.buildPipeline();""
+    NagSuppressions.addResourceSuppressionsByPath(
+      this,
+      '/example-cdk-pipeline/ExamplePipeline/Pipeline/ArtifactsBucket/Resource',
+      [
+        {
+          id: 'AwsSolutions-S1',
+          reason: 'Because I said so',
+        },
+      ]
+    );
+  }
 }
-}
-````
+```
 
 </details>
 
@@ -339,7 +439,7 @@ In some cases L2 Constructs do not have a native option to remediate an issue an
 <details>
   <summary>Example) Property Overrides</summary>
 
-```typescript
+```ts
 import {
   Instance,
   InstanceType,
@@ -370,6 +470,56 @@ export class CdkTestStack extends Stack {
     ]);
   }
 }
+```
+
+</details>
+
+## Conditionally Ignoring Suppressions
+
+You can optionally create a condition that prevents certain rules from being suppressed. You can create conditions for any variety of reasons. Examples include a condition that always ignores a suppression, a condition that ignores a suppression based on the date, a condition that ignores a suppression based on the reason. You can read [the developer docs](./docs/IgnoreSuppressionConditions.md) for more information on creating your own conditions.
+
+<details>
+  <summary>Example) Using the pre-built `SuppressionIgnoreErrors` class to ignore suppressions on any `Error` level rules.</summary>
+
+```ts
+import { App, Aspects } from 'aws-cdk-lib';
+import { CdkTestStack } from '../lib/cdk-test-stack';
+import { AwsSolutionsChecks, SuppressionIgnoreErrors } from 'cdk-nag';
+
+const app = new App();
+new CdkTestStack(app, 'CdkNagDemo');
+// Ignore Suppressions on any errors
+Aspects.of(app).add(
+  new AwsSolutionsChecks({
+    suppressionIgnoreCondition: new SuppressionIgnoreErrors(),
+  })
+);
+```
+
+</details>
+
+## Customizing Logging
+
+`NagLogger`s give `NagPack` authors and users the ability to create their own custom reporting mechanisms. All pre-built `NagPacks`come with the `AnnotationsLogger`and the `NagReportLogger` (with CSV reports) enabled by default.
+
+See the [NagLogger](./docs/NagLogger.md) developer docs for more information.
+
+<details>
+  <summary>Example) Adding the `ExtremelyHelpfulConsoleLogger` example from the NagLogger docs</summary>
+
+```ts
+import { App, Aspects } from 'aws-cdk-lib';
+import { CdkTestStack } from '../lib/cdk-test-stack';
+import { ExtremelyHelpfulConsoleLogger } from './docs/NagLogger';
+import { AwsSolutionsChecks } from 'cdk-nag';
+
+const app = new App();
+new CdkTestStack(app, 'CdkNagDemo');
+Aspects.of(app).add(
+  new AwsSolutionsChecks({
+    additionalLoggers: [new ExtremelyHelpfulConsoleLogger()],
+  })
+);
 ```
 
 </details>

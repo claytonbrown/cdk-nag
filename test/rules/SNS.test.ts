@@ -12,8 +12,8 @@ import {
 import { Key } from 'aws-cdk-lib/aws-kms';
 import { CfnTopicPolicy, Topic } from 'aws-cdk-lib/aws-sns';
 import { Aspects, Stack } from 'aws-cdk-lib/core';
-import { SNSEncryptedKMS, SNSTopicSSLPublishOnly } from '../../src/rules/sns';
 import { validateStack, TestType, TestPack } from './utils';
+import { SNSEncryptedKMS, SNSTopicSSLPublishOnly } from '../../src/rules/sns';
 
 const testPack = new TestPack([SNSEncryptedKMS, SNSTopicSSLPublishOnly]);
 let stack: Stack;
@@ -27,11 +27,11 @@ describe('Amazon Simple Notification Service (Amazon SNS)', () => {
   describe('SNSEncryptedKMS: SNS topics are encrypted via KMS', () => {
     const ruleId = 'SNSEncryptedKMS';
     test('Noncompliance 1', () => {
-      new Topic(stack, 'rTopic');
+      new Topic(stack, 'Topic');
       validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
     });
     test('Compliance', () => {
-      new Topic(stack, 'rTopic', { masterKey: new Key(stack, 'rKey') });
+      new Topic(stack, 'Topic', { masterKey: new Key(stack, 'Key') });
       validateStack(stack, ruleId, TestType.COMPLIANCE);
     });
   });
@@ -39,12 +39,12 @@ describe('Amazon Simple Notification Service (Amazon SNS)', () => {
   describe('SNSTopicSSLPublishOnly: SNS topics require SSL requests for publishing', () => {
     const ruleId = 'SNSTopicSSLPublishOnly';
     test('Noncompliance 1', () => {
-      new Topic(stack, 'rTopic');
+      new Topic(stack, 'Topic');
       validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
     });
     test('Noncompliance 2', () => {
-      new Topic(stack, 'rTopic', { topicName: 'foo' });
-      new CfnTopicPolicy(stack, 'rTopicPolicy', {
+      new Topic(stack, 'Topic', { topicName: 'foo' });
+      new CfnTopicPolicy(stack, 'TopicPolicy', {
         topics: ['foo'],
         policyDocument: new PolicyDocument({
           statements: [
@@ -61,9 +61,9 @@ describe('Amazon Simple Notification Service (Amazon SNS)', () => {
       validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
     });
     test('Compliance', () => {
-      new Topic(stack, 'rTopic', { topicName: 'foo' });
-      new Topic(stack, 'rTopic2', { masterKey: new Key(stack, 'rKey') });
-      new Topic(stack, 'rTopic3').addToResourcePolicy(
+      new Topic(stack, 'Topic', { topicName: 'foo' });
+      new Topic(stack, 'Topic2', { masterKey: new Key(stack, 'Key') });
+      new Topic(stack, 'Topic3').addToResourcePolicy(
         new PolicyStatement({
           actions: ['sns:publish', 'sns:subscribe'],
           effect: Effect.DENY,
@@ -72,7 +72,7 @@ describe('Amazon Simple Notification Service (Amazon SNS)', () => {
           resources: ['foo'],
         })
       );
-      new CfnTopicPolicy(stack, 'rTopicPolicy', {
+      new CfnTopicPolicy(stack, 'TopicPolicy', {
         topics: ['foo'],
         policyDocument: new PolicyDocument({
           statements: [

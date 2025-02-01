@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # NagPack
 
-A `NagPack` is a named collection of [rules](./RuleCreation.md) that can be used to validate your stacks and applications. All of the [pre-built packs](../README.md#available-packs) are `NagPacks`.
+A `NagPack` is a named collection of [rules](./RuleCreation.md) that can be used to validate your stacks and applications. All of the [pre-built packs](../README.md#available-rules-and-packs) are `NagPacks`.
 
 ## Creating a NagPack
 
@@ -93,6 +93,53 @@ export class ExampleChecks extends NagPack {
   }
 }
 ```
+
+### Ignoring Suppressions
+
+You can optionally add a prebuilt or custom condition that prevents a rule from being suppressed. Below is an example of a condition that always prevents suppressions.
+The documentation on [rules](./IgnoreSuppressionConditions.md) walks through the process of creating your own conditions.
+
+```typescript
+import { CfnResource } from 'aws-cdk-lib';
+import { IConstruct } from 'constructs';
+import {
+  NagMessageLevel,
+  NagPack,
+  NagPackProps,
+  NagRuleCompliance,
+  NagRuleResult,
+  NagRules,
+  SuppressionIgnoreAlways,
+  rules,
+} from 'cdk-nag';
+
+const ALWAYS_IGNORE = new SuppressionIgnoreAlways(
+  'Here is a reason for ignoring the suppression.'
+);
+
+export class ExampleChecks extends NagPack {
+  constructor(props?: NagPackProps) {
+    super(props);
+    this.packName = 'Example';
+  }
+  public visit(node: IConstruct): void {
+    if (node instanceof CfnResource) {
+      this.applyRule({
+        info: 'My brief info.',
+        explanation: 'My detailed explanation.',
+        level: NagMessageLevel.ERROR,
+        rule: rules.s3.S3BucketSSLRequestsOnly,
+        ignoreSuppressionCondition: ALWAYS_IGNORE,
+        node: node,
+      });
+    }
+  }
+}
+```
+
+### Custom Logging
+
+`NagLogger`s give `NagPack` authors and users the ability to create their own custom reporting mechanisms. Read the [NagLogger](./NagLogger.md) documentation for more details
 
 ## Using a NagPack
 

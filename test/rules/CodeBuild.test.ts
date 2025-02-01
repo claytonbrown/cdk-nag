@@ -10,25 +10,20 @@ import {
 } from 'aws-cdk-lib/aws-codebuild';
 import { Key } from 'aws-cdk-lib/aws-kms';
 import { Aspects, Stack } from 'aws-cdk-lib/core';
+import { TestPack, TestType, validateStack } from './utils';
 import {
   CodeBuildProjectEnvVarAwsCred,
   CodeBuildProjectKMSEncryptedArtifacts,
   CodeBuildProjectManagedImages,
-  CodeBuildProjectPrivilegedModeDisabled,
   CodeBuildProjectSourceRepoUrl,
 } from '../../src/rules/codebuild';
-import { validateStack, TestType, TestPack } from './utils';
 
-const testPack = new TestPack(
-  [
-    CodeBuildProjectEnvVarAwsCred,
-    CodeBuildProjectKMSEncryptedArtifacts,
-    CodeBuildProjectManagedImages,
-    CodeBuildProjectPrivilegedModeDisabled,
-    CodeBuildProjectSourceRepoUrl,
-  ],
-  { verbose: true }
-);
+const testPack = new TestPack([
+  CodeBuildProjectEnvVarAwsCred,
+  CodeBuildProjectKMSEncryptedArtifacts,
+  CodeBuildProjectManagedImages,
+  CodeBuildProjectSourceRepoUrl,
+]);
 let stack: Stack;
 
 beforeEach(() => {
@@ -257,39 +252,6 @@ describe('Amazon CodeBuild', () => {
         buildSpec: BuildSpec.fromObjectToYaml({
           version: 0.2,
 
-          phases: {
-            build: {
-              commands: ['echo "foo"'],
-            },
-          },
-        }),
-      });
-      validateStack(stack, ruleId, TestType.COMPLIANCE);
-    });
-  });
-
-  describe('CodeBuildProjectPrivilegedModeDisabled: Codebuild projects have privileged mode disabled', () => {
-    const ruleId = 'CodeBuildProjectPrivilegedModeDisabled';
-    test('Noncompliance 1', () => {
-      new Project(stack, 'rBuildProject', {
-        buildSpec: BuildSpec.fromObjectToYaml({
-          version: 0.2,
-          phases: {
-            build: {
-              commands: ['echo "foo"'],
-            },
-          },
-        }),
-        environment: {
-          privileged: true,
-        },
-      });
-      validateStack(stack, ruleId, TestType.NON_COMPLIANCE);
-    });
-    test('Compliance', () => {
-      new Project(stack, 'rBuildProject', {
-        buildSpec: BuildSpec.fromObjectToYaml({
-          version: 0.2,
           phases: {
             build: {
               commands: ['echo "foo"'],

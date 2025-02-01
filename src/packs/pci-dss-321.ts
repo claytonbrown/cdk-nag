@@ -5,7 +5,8 @@ SPDX-License-Identifier: Apache-2.0
 
 import { CfnResource } from 'aws-cdk-lib';
 import { IConstruct } from 'constructs';
-import { NagMessageLevel, NagPack, NagPackProps } from '../nag-pack';
+import { NagPack, NagPackProps } from '../nag-pack';
+import { NagMessageLevel } from '../nag-rules';
 import {
   APIGWAssociatedWithWAF,
   APIGWCacheEnabledAndEncrypted,
@@ -58,7 +59,10 @@ import {
   IAMUserNoPolicies,
 } from '../rules/iam';
 import { KMSBackingKeyRotationEnabled } from '../rules/kms';
-import { LambdaInsideVPC } from '../rules/lambda';
+import {
+  LambdaFunctionPublicAccessProhibited,
+  LambdaInsideVPC,
+} from '../rules/lambda';
 import {
   OpenSearchEncryptedAtRest,
   OpenSearchErrorLogsToCloudWatch,
@@ -84,7 +88,6 @@ import {
   S3BucketPublicReadProhibited,
   S3BucketPublicWriteProhibited,
   S3BucketReplicationEnabled,
-  S3BucketServerSideEncryptionEnabled,
   S3BucketSSLRequestsOnly,
   S3BucketVersioningEnabled,
   S3DefaultEncryptionKMS,
@@ -188,7 +191,7 @@ export class PCIDSS321Checks extends NagPack {
    */
   private checkAutoScaling(node: CfnResource): void {
     this.applyRule({
-      info: 'The Auto Scaling group (which is associated with a load balancer) does not utilize ELB healthchecks - (Control ID: 2.2).',
+      info: 'The Auto Scaling group (which is associated with a load balancer) does not utilize ELB health checks - (Control ID: 2.2).',
       explanation:
         'The Elastic Load Balancer (ELB) health checks for Amazon Elastic Compute Cloud (Amazon EC2) Auto Scaling groups support maintenance of adequate capacity and availability. The load balancer periodically sends pings, attempts connections, or sends requests to test Amazon EC2 instances health in an auto-scaling group. If an instance is not reporting back, traffic is sent to a new Amazon EC2 instance.',
       level: NagMessageLevel.ERROR,
@@ -540,6 +543,14 @@ export class PCIDSS321Checks extends NagPack {
    */
   private checkLambda(node: CfnResource) {
     this.applyRule({
+      info: 'The Lambda function permission grants public access - (Control IDs: 1.2, 1.2.1, 1.3, 1.3.1, 1.3.2, 1.3.4, 2.2.2).',
+      explanation:
+        'Public access allows anyone on the internet to perform unauthenticated actions on your function and can potentially lead to degraded availability.',
+      level: NagMessageLevel.ERROR,
+      rule: LambdaFunctionPublicAccessProhibited,
+      node: node,
+    });
+    this.applyRule({
       info: 'The Lambda function is not VPC enabled - (Control IDs: 1.2, 1.2.1, 1.3, 1.3.1, 1.3.2, 1.3.4, 2.2.2).',
       explanation:
         'Because of their logical isolation, domains that reside within an Amazon VPC have an extra layer of security when compared to domains that use public endpoints.',
@@ -722,14 +733,6 @@ export class PCIDSS321Checks extends NagPack {
         'Amazon Simple Storage Service (Amazon S3) Cross-Region Replication (CRR) supports maintaining adequate capacity and availability. CRR enables automatic, asynchronous copying of objects across Amazon S3 buckets to help ensure that data availability is maintained.',
       level: NagMessageLevel.ERROR,
       rule: S3BucketReplicationEnabled,
-      node: node,
-    });
-    this.applyRule({
-      info: 'The S3 Bucket does not have default server-side encryption enabled - (Control IDs: 2.2, 3.4, 8.2.1, 10.5).',
-      explanation:
-        'Because sensitive data can exist at rest in Amazon S3 buckets, enable encryption to help protect that data.',
-      level: NagMessageLevel.ERROR,
-      rule: S3BucketServerSideEncryptionEnabled,
       node: node,
     });
     this.applyRule({
